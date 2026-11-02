@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>ur5_rh_p12_description</name>
+  <version>0.1.0</version>
+  <description>UR5 (CB3) + ROBOTIS RH-P12-RN(A) gripper + RealSense D435i wrist camera, as one URDF.</description>
+  <maintainer email="taeung1203ai@gmail.com">taeung</maintainer>
+  <!-- Gripper xacro and meshes (urdf/rh_p12_rn_a.urdf.xacro, meshes/rh_p12_rn_a/) are Apache-2.0 from ROBOTIS -->
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>ur_description</exec_depend>
+  <exec_depend>realsense2_description</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
