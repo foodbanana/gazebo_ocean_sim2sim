@@ -7,8 +7,8 @@
   same file works for Gazebo (default) or another system.
 
     arm 6 joints               : position command, position / velocity / effort state
-    rh_r1_joint                : position command, position / velocity state
-    rh_r2, rh_l1, rh_l2        : mimic joints of rh_r1_joint (URDF <mimic>), state only
+    rh_r1_joint                : position command, position / velocity / effort state
+    rh_r2, rh_l1, rh_l2        : mimic joints of rh_r1_joint (URDF <mimic>), state only (position / velocity / effort)
 
   Initial joint values = home pose of the Isaac Sim training setup:
     [0, -pi/2, pi/2, -pi/2, -pi/2, 0], gripper open (0).
@@ -34,6 +34,7 @@
     <joint name="${name}">
       <state_interface name="position"/>
       <state_interface name="velocity"/>
+      <state_interface name="effort"/>
     </joint>
   </xacro:macro>
 
@@ -49,7 +50,7 @@
     <xacro:ur5_rh_p12_position_joint name="wrist_2_joint"       initial="-1.5708" effort="true"/>
     <xacro:ur5_rh_p12_position_joint name="wrist_3_joint"       initial="0.0" effort="true"/>
 
-    <xacro:ur5_rh_p12_position_joint name="rh_r1_joint" initial="0.0"/>
+    <xacro:ur5_rh_p12_position_joint name="rh_r1_joint" initial="0.0" effort="true"/>
     <xacro:ur5_rh_p12_mimic_joint name="rh_r2"/>
     <xacro:ur5_rh_p12_mimic_joint name="rh_l1"/>
     <xacro:ur5_rh_p12_mimic_joint name="rh_l2"/>

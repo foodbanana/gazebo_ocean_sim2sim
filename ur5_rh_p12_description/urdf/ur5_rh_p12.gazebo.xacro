@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!--
-  Gazebo sensors of the UR5 + RH-P12-RN arm: wrist D435i color camera.
+  Gazebo-only parts of the UR5 + RH-P12-RN arm: wrist D435i color camera, finger friction.
 
   Same as the Isaac Sim wrist camera (data_collection_ur5_gripper isaacsim/config/wrist_camera.yaml,
   real D435i camera_info 640x480, 2026-09-30):
@@ -16,6 +16,23 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <xacro:arg name="wrist_camera_update_rate" default="30"/>
+
+  <!-- Finger friction. Same INPUT as Isaac Sim (sim2sim: same values, the difference in the result is the gap):
+       Isaac Sim finger / object material static 0.6, dynamic 0.5, combine min. DART has one coefficient per surface
+       (the smaller of the two surfaces in contact is used, like "min") -> 0.6, the static value (it decides when a
+       held object starts to slip). The objects use the same value (drone: ocean_sim2sim_gazebo/config/iris_drone.yaml).
+       docs/grasp.md -->
+  <xacro:arg name="gripper_friction" default="0.6"/>
+  <xacro:macro name="ur5_rh_p12_finger_friction" params="link">
+    <gazebo reference="${link}">
+      <mu1>$(arg gripper_friction)</mu1>
+      <mu2>$(arg gripper_friction)</mu2>
+    </gazebo>
+  </xacro:macro>
+  <xacro:ur5_rh_p12_finger_friction link="rh_p12_rn_r1"/>
+  <xacro:ur5_rh_p12_finger_friction link="rh_p12_rn_r2"/>
+  <xacro:ur5_rh_p12_finger_friction link="rh_p12_rn_l1"/>
+  <xacro:ur5_rh_p12_finger_friction link="rh_p12_rn_l2"/>
 
   <gazebo reference="wrist_camera_color_frame">
     <sensor name="wrist_camera_color" type="camera">

@@ -100,6 +100,16 @@ D435i color, 640 x 480 rgb8, same intrinsics as the Isaac Sim / real camera:
 ros2 run rqt_image_view rqt_image_view /cam/wrist/color/image_raw
 ```
 
+## Grasp physics
+
+Same inputs as Isaac Sim (gripper drive 2.28 Nm, friction 0.6), the differences in the results are recorded as the
+sim2sim gap (e.g. pull-out force 9.4 N vs 19.1 N): [`docs/grasp.md`](docs/grasp.md).
+
+```bash
+ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py world:=empty_ocean_calm   # no waves, for tests
+ros2 run ocean_sim2sim_bringup grasp_test.py --tests E G3 G1 G4
+```
+
 ## Drone to grasp
 
 A 3DR Iris scaled 0.75 (0.8 kg, same as the Isaac Sim drone, PX4 Iris meshes) hovers world-fixed above the arm

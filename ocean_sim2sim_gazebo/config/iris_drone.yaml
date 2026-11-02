@@ -33,3 +33,6 @@ collision:
   max_convex_hull: 32
   max_ch_vertex: 64
   seed: 0
+  # surface friction of the hulls = Isaac Sim object material static friction 0.6 (DART: one coefficient, the smaller
+  # of the two surfaces in contact). Same as the fingers (ur5_rh_p12_description gripper_friction). docs/grasp.md
+  friction: 0.6

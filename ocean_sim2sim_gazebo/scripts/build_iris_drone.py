@@ -74,8 +74,10 @@ def build(c):
     # ---- SDF
     rgb = ' '.join(f'{v:g}' for v in c['body']['color'])
     yaw_s = f'{yaw:.6f}'
+    mu = float(k['friction'])
     coll = '\n'.join(f'''      <collision name="hull_{i:02d}">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_{i:02d}.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>{mu}</mu><mu2>{mu}</mu2></ode></friction></surface>
       </collision>''' for i in range(len(hulls)))
     rot_vis = '\n'.join(f'''      <visual name="rotor_{i}">
         <pose>{p[0]:.6f} {p[1]:.6f} {p[2]:.6f} 0 0 {yaw_s}</pose>

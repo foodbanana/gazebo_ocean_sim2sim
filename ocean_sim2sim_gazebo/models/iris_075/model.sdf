@@ -34,99 +34,131 @@
       </visual>
       <collision name="hull_00">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_00.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_01">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_01.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_02">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_02.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_03">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_03.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_04">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_04.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_05">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_05.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_06">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_06.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_07">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_07.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_08">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_08.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_09">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_09.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_10">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_10.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_11">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_11.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_12">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_12.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_13">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_13.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_14">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_14.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_15">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_15.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_16">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_16.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_17">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_17.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_18">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_18.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_19">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_19.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_20">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_20.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_21">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_21.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_22">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_22.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_23">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_23.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_24">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_24.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_25">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_25.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_26">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_26.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_27">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_27.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_28">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_28.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_29">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_29.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_30">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_30.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
       <collision name="hull_31">
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_31.stl</uri></mesh></geometry>
+        <surface><friction><ode><mu>0.6</mu><mu2>0.6</mu2></ode></friction></surface>
       </collision>
     </link>
 

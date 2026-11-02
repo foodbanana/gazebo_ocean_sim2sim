@@ -69,7 +69,10 @@ def launch(context, *args, **kwargs):
         executable='spawner',
         output='screen',
         arguments=['joint_state_broadcaster', 'arm_state_broadcaster', 'arm_controller', 'gripper_controller',
-                   '--controller-manager-timeout', '120'])
+                   '--controller-manager-timeout', '120',
+                   # default 10 s: at a busy start-up the load call answered later, the spawner retried and failed
+                   # with "already loaded" (controllers stayed inactive)
+                   '--service-call-timeout', '60'])
 
     # 5. Isaac Sim / real-robot topics
     interface = Node(

@@ -9,6 +9,7 @@ install(DIRECTORY
 
 install(PROGRAMS
   scripts/drive_test.py
+  scripts/grasp_test.py
   DESTINATION lib/${PROJECT_NAME})
 
 ament_package()
