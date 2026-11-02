@@ -1,0 +1,35 @@
+# Drone to grasp: 3DR Iris scaled 0.75 (stand-in until the PX4 SITL drone).
+# Same as the Isaac Sim drone (data_collection_ur5_gripper isaacsim/config/drone_iris.yaml):
+#   Iris outline 0.75x (waist 105 mm -> ~79 mm, fits the 107 mm gripper opening), 0.8 kg (body 0.78 + rotors 4 x 0.005),
+#   rotors fixed to the body, body collision = convex decomposition of the body+arms mesh, inertia from the shapes.
+# Meshes: PX4 Gazebo-classic Iris (models/iris_075/meshes, see README there) = the same mesh as the Isaac Sim
+# (Pegasus) Iris, which is that mesh turned 180 deg about z (checked: x=0 / y=0 sections mirror each other).
+#
+# scripts/build_iris_drone.py turns this into models/iris_075/model.sdf and meshes/collision/hull_*.stl.
+# Drone frame: +x forward, +y left, +z up, origin = original Iris model origin (scaled). m, kg.
+
+scale: 0.75
+yaw: 3.141592653589793        # mesh -> drone frame rotation about z (Isaac Sim / Pegasus orientation)
+
+body:
+  mesh: meshes/iris.stl
+  mass: 0.78
+  color: [0.2, 0.2, 0.2]
+
+# rotor discs (visual only, fixed). Positions / meshes of the original Iris model (before scale and yaw)
+rotors:
+  mass: 0.005                 # each
+  radius: 0.128               # for the disc inertia
+  thickness: 0.005
+  list:
+    - {pos: [0.13, -0.22, 0.023], mesh: meshes/iris_prop_ccw.dae}
+    - {pos: [-0.13, 0.20, 0.023], mesh: meshes/iris_prop_ccw.dae}
+    - {pos: [0.13, 0.22, 0.023], mesh: meshes/iris_prop_cw.dae}
+    - {pos: [-0.13, -0.20, 0.023], mesh: meshes/iris_prop_cw.dae}
+
+# CoACD convex decomposition of the body mesh (PhysX convex decomposition in Isaac Sim: 32 hulls, 64 vertices)
+collision:
+  threshold: 0.03             # concavity error
+  max_convex_hull: 32
+  max_ch_vertex: 64
+  seed: 0

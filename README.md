@@ -102,7 +102,7 @@ ros2 run rqt_image_view rqt_image_view /cam/wrist/color/image_raw
 
 ## Drone to grasp
 
-A 0.8 kg simple quadcopter (same shapes and masses as the Isaac Sim drone) hovers world-fixed above the arm
+A 3DR Iris scaled 0.75 (0.8 kg, same as the Isaac Sim drone, PX4 Iris meshes) hovers world-fixed above the arm
 while the boat moves on the waves; `/sim/drone_kill` drops it, `/sim/reset` starts a new episode
 (arm to the start pose, drone at a random point of the Isaac Sim target list, seeded) ([`docs/scene.md`](docs/scene.md)).
 A PX4 SITL drone will replace it.
@@ -124,6 +124,9 @@ The root link `robot_mount` is not welded to the world, so the arm can be attach
 ## License
 
 Apache-2.0 (see `LICENSE`).
+
+- Iris meshes (`ocean_sim2sim_gazebo/models/iris_075/meshes/`): PX4 Gazebo-classic Iris (Lorenz Meier, Thomas Gubler),
+  BSD (see `ocean_sim2sim_gazebo/models/iris_075/README.md`, `LICENSE_PX4`).
 
 - Gripper xacro and meshes (`ur5_rh_p12_description/urdf/rh_p12_rn_a.urdf.xacro`,
   `ur5_rh_p12_description/meshes/rh_p12_rn_a/`): Apache-2.0, from

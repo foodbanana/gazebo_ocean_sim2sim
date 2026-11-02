@@ -2,7 +2,7 @@
 
 작성: 2026-11-02 · 패키지 `ocean_sim2sim_gazebo` (드론 모델), `ocean_sim2sim_interface` (`scene_node`)
 
-PX4 SITL 드론을 붙이기 전까지 쓰는 **임시 드론**과 에피소드 서비스. Isaac Sim 드론 파지 씬과 같은 드론·위치·서비스를 쓴다.
+PX4 SITL 드론을 붙이기 전까지 쓰는 **드론 (Iris 0.75 배, world 고정 호버)**과 에피소드 서비스. Isaac Sim 드론 파지 씬과 같은 드론·위치·서비스를 쓴다.
 
 ---
 
@@ -23,21 +23,25 @@ ros2 service call /sim/drone_kill std_srvs/srv/Trigger     # 드론 모터 정�
 
 처음 드론이 뜨기 전 (sim 약 8 s) 에는 두 서비스 모두 `success=False` (`scene not ready yet`).
 
-## 2. 드론 모델 (`ocean_sim2sim_gazebo/models/simple_drone`)
+## 2. 드론 모델 (`ocean_sim2sim_gazebo/models/iris_075`)
 
-Isaac Sim `drone_simple.yaml` 과 같은 값 (`ocean_sim2sim_gazebo/config/simple_drone.yaml` 에 복사):
+Isaac Sim 이 실제로 쓰는 드론 (`drone_iris.yaml`) 과 같게: **3DR Iris 를 0.75 배**로 줄인 것.
 
-| 부분 | 크기 | 질량 |
+| 항목 | Isaac Sim (`drone_iris.yaml`) | Gazebo |
 |---|---|---|
-| 몸체 박스 | 180 × 80 × 70 mm (폭 80 mm 방향으로 잡음, 그리퍼 최대 열림 약 107 mm) | 0.560 kg |
-| 팔 4 | 몸체 옆면 → 모터 (±100, ±120) mm, 18 × 12 mm | 0.010 kg 씩 |
-| 모터 4 | Ø28 × 22 mm | 0.040 kg 씩 |
-| 프로펠러 원판 4 | Ø130 × 3 mm, z 48 mm | 0.005 kg 씩 |
-| 다리 4 | Ø8 mm, 아래 끝 z −45 mm | 0.005 kg 씩 |
-| **합** | | **0.800 kg**, 무게중심 z +8 mm |
+| 외형 | Pegasus Iris (원래 PX4 Gazebo Iris) | **같은 메시** (PX4 Gazebo-classic `iris.stl`, 버텍스 18,171 개로 같음) + 프로펠러 2 종 |
+| 방향 | Pegasus 메시 = PX4 메시를 z 축 180° 돌린 것 | 메시를 180° 돌려 같은 방향 (x = 0 / y = 0 단면이 Isaac Sim 기록과 일치) |
+| 크기 | 0.75 배: 전체 x −107~117, y −180~178 mm, 허리 폭 약 79 mm | 같음 (허리 폭 메시 78.4 mm) |
+| 질량 | 몸체 0.78 + 프로펠러 4 × 0.005 = 0.8 kg | 같음 |
+| 프로펠러 | 관절 고정 | 몸체에 고정 (보이기만, 충돌 없음) |
+| 충돌 | 몸체+팔 메시 convex decomposition (PhysX) | CoACD convex decomposition, 32 조각, 조각당 버텍스 64 개 이하. 허리 폭 82.8 mm (볼록 조각이 오목한 곳을 메워 4 mm 두꺼움) |
+| 관성 | 형상으로 다시 계산 | 충돌 조각 균일 밀도 + 프로펠러 원판 |
 
-강체 하나, 모든 도형이 시각·충돌 형상. 관성 = 도형별 (균일 밀도) 합.
-yaml 을 바꾸면 `python3 ocean_sim2sim_gazebo/scripts/build_simple_drone.py` 로 `model.sdf` 를 다시 만든다.
+- 설정 `ocean_sim2sim_gazebo/config/iris_drone.yaml` → `scripts/build_iris_drone.py` 가 `model.sdf` 와 `meshes/collision/hull_*.stl` 생성
+  (다시 만들 때만 `pip install trimesh coacd scipy` 필요, 같은 설정이면 같은 결과)
+- 메시 출처·라이선스: `models/iris_075/README.md` (PX4, BSD)
+- SDF 를 문자열로 생성하므로 메시 경로는 `model://iris_075/...`
+- 처음에 Isaac Sim 의 데모용 간이 드론 (`drone_simple.yaml`, 박스·원통) 을 잘못 옮겼다가 바꿨다
 
 ## 3. 호버 = world 에 고정
 
@@ -65,10 +69,13 @@ world 위치 = (평균 베이스 위치) + Rz(평균 베이스 yaw) · `drone_po
 
 | 항목 | 결과 |
 |---|---|
-| 질량 | 몸체 0.560 kg, 전체 0.800 kg (Isaac Sim 과 같음) |
-| 고정 | 6 s 동안 위치 그대로 (0.626, −0.000, 1.955) |
-| kill | 떨어져 상판 위로 (z 1.26) |
-| 손목 영상 (`under_drone` 자세) | 드론 몸체·팔·모터가 가운데, 프로펠러 끝이 위에서 잘림 (Isaac Sim 기록과 같음). 몸체 중심 평균 (340, 218), 파도로 ±15 px. 영상 중심 (332, 239) 과 약 20 px (1.4 cm) 차이 = 보트의 기본 피치 0.6° 로 팔 전체가 기울어서 |
+| 질량 | 0.800 kg (Isaac Sim 과 같음) |
+| 고정 | 위치 그대로 (0.604, −0.000, 1.929) |
+| kill | 떨어져 아래의 그리퍼 위에 걸림 (`under_drone` 자세였음) |
+| 리셋 | 성공 (드론 지우고 목록 점에 다시 띄움) |
+| RTF | 1.00 (Iris 메시 + 충돌 조각 32 개) |
+| 손목 영상 (`under_drone` 자세) | Iris 를 아래에서 올려다본 모습: 가운데 몸체, X 자 팔 4 개, 팔 끝 모터, 프로펠러 날. 색은 PX4 Gazebo 재질 그대로 (몸체 진회색, 프로펠러 흰색) — Isaac Sim (Pegasus) 재질 색과 같은지는 아직 비교 안 함 |
+| 위치 (이전 간이 드론으로 잼) | 드론 중심이 영상 중심 (332, 239) 근처, 파도로 ±15 px. 약 20 px (1.4 cm) 위 = 보트의 기본 피치 0.6° 로 팔 전체가 기울어서 |
 
 ## 6. 리셋 `/sim/reset`
 

@@ -2,7 +2,7 @@
 
   - After the boat has settled (spawn_delay sim seconds) spawn
       drone_anchor : model welded to the world, no collision (the point the drone is held at)
-      simple_drone : the drone (ocean_sim2sim_gazebo/models/simple_drone), held on the anchor by a
+      drone        : the drone (ocean_sim2sim_gazebo/models/iris_075, Iris 0.75x as in Isaac Sim), held on the anchor by a
                      DetachableJoint = world-fixed hover (stand-in until the PX4 SITL drone)
     at  robot base position + Rz(base yaw) * drone_pos_base, level (yaw = base yaw).
     The robot base pose comes from the boat model pose (Gazebo OdometryPublisher on the boat) and the fixed joints
@@ -111,7 +111,7 @@ class SceneNode(Node):
         self.drone_pos_base = [float(v) for v in p('drone_pos_base', [0.60, 0.0, 0.738]).value]
         self.spawn_delay = float(p('spawn_delay', 3.0).value)
         self.base_average = float(p('base_average', 5.0).value)
-        default_sdf = os.path.join(get_package_share_directory('ocean_sim2sim_gazebo'), 'models', 'simple_drone', 'model.sdf')
+        default_sdf = os.path.join(get_package_share_directory('ocean_sim2sim_gazebo'), 'models', 'iris_075', 'model.sdf')
         self.drone_sdf_path = str(p('drone_sdf', default_sdf).value)
         with open(self.drone_sdf_path) as f:
             self.drone_sdf = f.read()
@@ -225,7 +225,7 @@ class SceneNode(Node):
         try:
             pos, yaw, base = self.drone_world_pose(self.drone_pos_base)
             self._spawn('drone_anchor', ANCHOR_SDF, pos, yaw)
-            self._spawn('simple_drone', self.drone_sdf, pos, yaw)
+            self._spawn('drone', self.drone_sdf, pos, yaw)
             self.wait_sim(2.0, until=lambda: self.attached is True)
             self.spawned = True           # only now: /sim/reset and /sim/drone_kill are accepted
         finally:
@@ -302,7 +302,7 @@ class SceneNode(Node):
                 if not self.wait_sim(2.0, until=lambda: self.attached is False):
                     raise RuntimeError('drone did not report "detached" within 2 s')
             self.wait_sim(0.05)
-            self._delete('simple_drone')
+            self._delete('drone')
             self.wait_sim(0.05)
             self._delete('drone_anchor')
             self.wait_sim(0.05)
@@ -318,7 +318,7 @@ class SceneNode(Node):
             pos_base = [a + b for a, b in zip(target, offset)]
             pos, yaw, base = self.drone_world_pose(pos_base)
             self._spawn('drone_anchor', ANCHOR_SDF, pos, yaw)
-            self._spawn('simple_drone', self.drone_sdf, pos, yaw)
+            self._spawn('drone', self.drone_sdf, pos, yaw)
             attached = self.wait_sim(2.0, until=lambda: self.attached is True)
             phases['spawn_drone'], t = self.now() - t, self.now()
             # 6. commands again
