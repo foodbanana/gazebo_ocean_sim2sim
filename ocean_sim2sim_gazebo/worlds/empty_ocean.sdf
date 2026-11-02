@@ -6,6 +6,11 @@
     <physics name="4ms" type="dart">
       <max_step_size>0.004</max_step_size>
       <real_time_factor>1.0</real_time_factor>
+      <!-- Bullet instead of the default ODE collision detector: with self-collision on
+           (arm <-> boat, arm <-> itself) ODE ran at RTF ~0.4, Bullet at 1.0 -->
+      <dart>
+        <collision_detector>bullet</collision_detector>
+      </dart>
     </physics>
 
     <gui fullscreen="0">

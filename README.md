@@ -49,6 +49,10 @@ ros2 launch ocean_sim2sim_gazebo empty_ocean.launch.py urdf:=/path/to/boat.urdf.
 ros2 launch ocean_sim2sim_gazebo empty_ocean.launch.py world:=nbpark
 ```
 
+`empty_ocean` uses DART with the **Bullet** collision detector. With self-collision on
+(`wamv_with_arm.urdf.xacro` `self_collide:=true`, default) the default ODE detector ran at RTF ~0.4,
+Bullet at 1.0. VRX worlds such as `nbpark` keep ODE, so expect a slower simulation there.
+
 Waves and wind are set in `ocean_sim2sim_gazebo/worlds/empty_ocean.sdf`
 (`vrx::PublisherPlugin` `gain` / `period` / `direction` / `steepness`, and `vrx::USVWind`).
 
@@ -63,6 +67,7 @@ is not welded to the world.
 | `arm_xacro` | `ur5_rh_p12_description/urdf/ur5_rh_p12_d435i.urdf.xacro` | arm to mount |
 | `arm_root_link` | `robot_mount` | root link of that arm |
 | `arm_mount_xyz` / `arm_mount_rpy` | `0 0 1.30` / `0 0 0` | pose on the deck (deck top centre, facing the bow) |
+| `self_collide` | `true` | collisions between links of the model (arm <-> boat, arm <-> itself) |
 
 ## Robot arm description
 

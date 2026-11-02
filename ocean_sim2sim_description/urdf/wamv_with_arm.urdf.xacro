@@ -43,4 +43,13 @@
     <origin xyz="$(arg arm_mount_xyz)" rpy="$(arg arm_mount_rpy)"/>
   </joint>
 
+  <!-- ===== collisions inside the model (arm <-> boat, arm <-> itself) =====
+       Gazebo skips collisions between links of the same model unless self_collide is on.
+       Links connected directly by a joint are still not checked against each other.
+       Isaac Sim training also had self-collision enabled. -->
+  <xacro:arg name="self_collide" default="true"/>
+  <gazebo>
+    <self_collide>$(arg self_collide)</self_collide>
+  </gazebo>
+
 </robot>
