@@ -22,6 +22,7 @@ setup(
     entry_points={
         'console_scripts': [
             'interface_node = ocean_sim2sim_interface.interface_node:main',
+            'scene_node = ocean_sim2sim_interface.scene_node:main',
         ],
     },
 )

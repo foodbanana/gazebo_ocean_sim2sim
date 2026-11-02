@@ -32,3 +32,16 @@ ocean_sim2sim_interface:
       joint_states_topic: /gripper/joint_states
       target_topic: /gripper/target
       trajectory_topic: /gripper_controller/joint_trajectory
+
+# Episode scene (scene_node): the drone to grasp. Same drone position as Isaac Sim (scene_drone.yaml drone_pos,
+# robot base frame = world - table top 0.762): the under_drone start pose sees it at the wrist image centre.
+ocean_sim2sim_scene:
+  ros__parameters:
+    use_sim_time: true
+    boat_model: wamv
+    boat_link: wamv/base_link
+    robot_base_link: robot_mount       # arm root link; drone positions are given in its (level) frame
+    drone_pos_base: [0.60, 0.0, 0.738] # [m] robot base frame (x forward, y left, z up), level
+    spawn_delay: 3.0                   # [s sim] wait for the boat to settle after start
+    base_average: 5.0                  # [s sim] average the robot base pose over this (about one wave period, 5 s)
+                                       #   before placing the drone: the drone is world-fixed, the boat moves

@@ -10,10 +10,10 @@ VRX is used as a dependency and is not modified.
 
 | Package | Contents |
 |---|---|
-| `ocean_sim2sim_gazebo` | `empty_ocean` world (VRX Coast Waves only, no terrain) and launch files |
+| `ocean_sim2sim_gazebo` | `empty_ocean` world (VRX Coast Waves only, no terrain), the drone model, launch files |
 | `ur5_rh_p12_description` | UR5 (CB3) + ROBOTIS RH-P12-RN(A) gripper + RealSense D435i wrist camera as one URDF |
 | `ocean_sim2sim_description` | WAM-V (VRX hull, hydrodynamics, 2 aft thrusters, IMU) with a pluggable robot arm on the deck |
-| `ocean_sim2sim_interface` | Isaac Sim / real-robot topics on top of ros2_control (`/joint_command`, `/gripper/command`, `/joint_states`, `/gripper/joint_states`) |
+| `ocean_sim2sim_interface` | Isaac Sim / real-robot topics on top of ros2_control (`/joint_command`, `/gripper/command`, `/joint_states`, `/gripper/joint_states`) and the episode scene (drone, `/sim/*` services) |
 | `ocean_sim2sim_bringup` | One launch file: ocean + WAM-V with the arm + controllers + interface node |
 
 ## Requirements
@@ -99,6 +99,12 @@ D435i color, 640 x 480 rgb8, same intrinsics as the Isaac Sim / real camera:
 ```bash
 ros2 run rqt_image_view rqt_image_view /cam/wrist/color/image_raw
 ```
+
+## Drone to grasp
+
+A 0.8 kg simple quadcopter (same shapes and masses as the Isaac Sim drone) hovers world-fixed above the arm
+while the boat moves on the waves; `/sim/drone_kill` drops it ([`docs/scene.md`](docs/scene.md)).
+A PX4 SITL drone will replace it.
 
 ## Robot arm description
 

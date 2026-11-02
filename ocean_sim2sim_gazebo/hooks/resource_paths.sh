@@ -1,1 +1,2 @@
 ament_prepend_unique_value GZ_SIM_RESOURCE_PATH "$AMENT_CURRENT_PREFIX/share/ocean_sim2sim_gazebo/worlds"
+ament_prepend_unique_value GZ_SIM_RESOURCE_PATH "$AMENT_CURRENT_PREFIX/share/ocean_sim2sim_gazebo/models"
