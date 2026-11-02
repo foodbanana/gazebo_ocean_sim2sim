@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Drive tests for the arm and gripper in Gazebo (sim time). See docs/gain_tuning.md.
+"""Drive tests for the arm and gripper in Gazebo through the Isaac Sim / real-robot interface
+(/joint_command, /gripper/command). Sim time. See docs/gain_tuning.md and docs/interface.md.
 
 Run while `ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py` is up:
 
@@ -7,39 +8,49 @@ Run while `ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py` is up:
     ros2 run ocean_sim2sim_bringup drive_test.py --tests a c     # only test A and C
     ros2 run ocean_sim2sim_bringup drive_test.py --tests step --step 0.2 --joint shoulder_lift_joint
 
-Tests (A and C are the same as the Isaac Sim drive tuning tests):
+Tests (A, C, D are the same as the Isaac Sim drive tuning tests):
     hold    : hold the home pose for 10 s, max |q - home|
+    interp  : one 0.03 rad command on wrist_3 -> reference ramp, start / 50 % times (Isaac Sim check_ros2 #4)
     a       : one joint at a time, 0.05 rad step -> overshoot, settling time (2 %), steady-state error
     c       : one joint at a time, 50 Hz staircase of a 0.5 Hz sine (0.3 rad) -> latency, RMS error
     step    : one step (--step rad) on --joint (or all joints) -> time series
-    gripper : rh_r1_joint 0 -> 1.0 rad -> finger positions, max mimic error
+    gripper : test D: close (raw 1150) and open (raw 0) -> time, reaction, mimic error, /gripper/joint_states
 """
 import argparse
 import math
 
 import rclpy
+from control_msgs.msg import JointTrajectoryControllerState
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Float64
 
 ARM = ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint',
        'wrist_1_joint', 'wrist_2_joint', 'wrist_3_joint']
 HOME = [0.0, -1.5708, 1.5708, -1.5708, -1.5708, 0.0]
 FINGERS = ['rh_r1_joint', 'rh_r2', 'rh_l1', 'rh_l2']
+RAW_MAX, UPPER = 1150.0, 1.13514578304
+
+
+def stamp(msg):
+    return msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
 
 
 class DriveTest(Node):
     def __init__(self):
         super().__init__('drive_test', parameter_overrides=[Parameter('use_sim_time', value=True)])
-        self.log = []  # [(stamp [s], {joint: position})]
-        self.create_subscription(JointState, '/joint_states', self._on_joint_states, 100)
-        self.arm_pub = self.create_publisher(Float64MultiArray, '/arm_controller/commands', 10)
-        self.grip_pub = self.create_publisher(Float64MultiArray, '/gripper_controller/commands', 10)
-
-    def _on_joint_states(self, msg):
-        t = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-        self.log.append((t, dict(zip(msg.name, msg.position))))
+        self.log = []       # [(t, {joint: position})]  all joints, every physics step
+        self.ref = []       # [(t, [arm reference])]    arm_controller reference
+        self.grip_raw = []  # [(t, present raw)]        /gripper/joint_states
+        self.create_subscription(JointState, '/joint_state_broadcaster/joint_states',
+                                 lambda m: self.log.append((stamp(m), dict(zip(m.name, m.position)))), 200)
+        self.create_subscription(JointTrajectoryControllerState, '/arm_controller/controller_state',
+                                 lambda m: self.ref.append((stamp(m), list(m.reference.positions))), 200)
+        self.create_subscription(JointState, '/gripper/joint_states',
+                                 lambda m: self.grip_raw.append((stamp(m), m.position[0])), 50)
+        self.arm_pub = self.create_publisher(JointState, '/joint_command', 10)
+        self.grip_pub = self.create_publisher(Float64, '/gripper/command', 10)
 
     def now(self):
         return self.get_clock().now().nanoseconds * 1e-9
@@ -50,28 +61,58 @@ class DriveTest(Node):
             rclpy.spin_once(self, timeout_sec=0.002)
 
     def arm(self, q):
-        self.arm_pub.publish(Float64MultiArray(data=[float(x) for x in q]))
+        m = JointState()
+        m.header.stamp = self.get_clock().now().to_msg()
+        m.name = ARM
+        m.position = [float(x) for x in q]
+        self.arm_pub.publish(m)
 
-    def gripper(self, q):
-        self.grip_pub.publish(Float64MultiArray(data=[float(q)]))
+    def gripper(self, raw):
+        self.grip_pub.publish(Float64(data=float(raw)))
 
     def go_home(self, sec=1.5):
         self.arm(HOME)
         self.gripper(0.0)
         self.spin_for(sec)
 
-    def since(self, t0):
-        return [(t - t0, d) for t, d in self.log if t >= t0]
+    def since(self, t0, log=None):
+        return [(t - t0, d) for t, d in (self.log if log is None else log) if t >= t0]
 
 
 def test_hold(n):
     n.go_home(2.0)
     n.log.clear()
     n.spin_for(10.0)
-    err = [max(abs(d[j] - h) for _, d in n.log) for j, h in zip(ARM, HOME)]
     print('HOLD 10 s: max |q - home| [deg]')
-    for j, e in zip(ARM, err):
-        print('  %-20s %.4f' % (j, math.degrees(e)))
+    for j, h in zip(ARM, HOME):
+        print('  %-20s %.4f' % (j, math.degrees(max(abs(d[j] - h) for _, d in n.log))))
+
+
+def test_interp(n, size=0.03):
+    """Isaac Sim check_ros2 #4 (0.03 rad step through /joint_command): start moving 33-50 ms, 50 % at 50-67 ms."""
+    n.go_home(2.0)
+    k = ARM.index('wrist_3_joint')
+    tgt = list(HOME)
+    tgt[k] += size
+    n.ref.clear()
+    n.log.clear()
+    t0 = n.now()
+    n.arm(tgt)
+    n.spin_for(0.4)
+    print('INTERP: one %.3f rad command on wrist_3_joint (33 ms linear interpolation)' % size)
+    print('  %7s %12s %12s' % ('t [ms]', 'reference', 'measured'))
+    for t, r in n.since(t0, n.ref):
+        if t > 0.06:
+            break
+        meas = min(n.since(t0), key=lambda x: abs(x[0] - t))[1]['wrist_3_joint']
+        print('  %7.1f %12.4f %12.4f' % (t * 1000, r[k] - HOME[k], meas - HOME[k]))
+    rel = [(t, (d['wrist_3_joint'] - HOME[k]) / size) for t, d in n.since(t0)]
+    start = next((t for t, r in rel if r > 0.01), float('nan'))
+    t50 = next((t for t, r in rel if r >= 0.5), float('nan'))
+    peak = max(r for _, r in rel)
+    print('  start moving %.1f ms, 50 %% at %.1f ms, overshoot %.1f %%   (Isaac Sim: 33-50 ms, 50-67 ms, 0 %%)'
+          % (start * 1000, t50 * 1000, (peak - 1) * 100))
+    n.go_home()
 
 
 def test_a(n, size=0.05):
@@ -125,8 +166,8 @@ def test_c(n, amp=0.3, freq=0.5, cmd_hz=50.0, dur=4.0):
             return c
 
         samples = [(t, d[j] - HOME[k]) for t, d in n.since(t0) if t > 1.0]
-        # latency = time shift (0..100 ms) that best aligns the command with the response
-        lag = min(range(0, 101, 2),
+        # latency = time shift (0..120 ms) that best aligns the command with the response
+        lag = min(range(0, 121, 2),
                   key=lambda ms: sum((q - cmd_at(t - ms / 1000)) ** 2 for t, q in samples))
         rms = math.sqrt(sum((q - cmd_at(t)) ** 2 for t, q in samples) / len(samples))
         print('  %-20s latency %3d ms   RMS %.2f deg' % (j, lag, math.degrees(rms)))
@@ -154,36 +195,48 @@ def test_step(n, size, joint):
     n.go_home()
 
 
-def test_gripper(n, target=1.0):
-    n.go_home()
-    n.log.clear()
-    t0 = n.now()
-    n.gripper(target)
-    n.spin_for(3.0)
-    series = n.since(t0)
-    print('GRIPPER rh_r1_joint 0 -> %.2f rad' % target)
-    for dt in (0.05, 0.1, 0.2, 0.5, 1.0, 2.9):
-        t, d = min(series, key=lambda x: abs(x[0] - dt))
-        print('  t=%4.2fs  ' % t + '  '.join('%s %.3f' % (f, d[f]) for f in FINGERS))
-    mimic = max(abs(d[f] - d['rh_r1_joint']) for _, d in series for f in FINGERS[1:])
-    print('  max mimic error |finger - rh_r1_joint| = %.2f deg' % math.degrees(mimic))
+def test_gripper(n):
+    """Isaac Sim test D: time from the command until the position stops changing (within 2 % of the final value)."""
+    n.go_home(3.0)
+    print('TEST D (gripper): Isaac Sim 2.15 s close / 2.15 s open, reaction 0.033 s, criterion 1.98 ~ 2.42 s')
+    for raw in (RAW_MAX, 0.0):
+        n.log.clear()
+        n.grip_raw.clear()
+        t0 = n.now()
+        n.gripper(raw)
+        n.spin_for(3.5)
+        s = n.since(t0)
+        q0, q1 = s[0][1]['rh_r1_joint'], s[-1][1]['rh_r1_joint']
+        span = abs(q1 - q0)
+        done = next((t for i, (t, _) in enumerate(s)
+                     if all(abs(d['rh_r1_joint'] - q1) <= 0.02 * span for _, d in s[i:])), float('nan'))
+        react = next((t for t, d in s if abs(d['rh_r1_joint'] - q0) > 0.001), float('nan'))
+        mimic = max(abs(d[f] - d['rh_r1_joint']) for _, d in s for f in FINGERS[1:])
+        raws = n.since(t0, n.grip_raw)
+        print('  raw %6.0f: %.3f -> %.3f rad, done %.3f s, reaction %.3f s, max mimic error %.2f deg, '
+              '/gripper/joint_states last %.1f'
+              % (raw, q0, q1, done, react, math.degrees(mimic), raws[-1][1] if raws else float('nan')))
     n.go_home()
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--tests', nargs='+', default=['hold', 'a', 'c', 'step', 'gripper'],
-                   choices=['hold', 'a', 'c', 'step', 'gripper'])
+    names = ['hold', 'interp', 'a', 'c', 'step', 'gripper']
+    p.add_argument('--tests', nargs='+', default=names, choices=names)
     p.add_argument('--step', type=float, default=0.2, help='step size for the "step" test [rad]')
     p.add_argument('--joint', default='all', help='joint for the "step" test, or "all"')
     a = p.parse_args()
 
     rclpy.init()
     n = DriveTest()
-    while rclpy.ok() and (not n.log or n.now() == 0.0):
+    # wait for sim time, states and for the interface node to subscribe to our commands
+    # (a message published before the subscription is matched is lost)
+    while rclpy.ok() and (not n.log or n.now() == 0.0 or n.arm_pub.get_subscription_count() == 0
+                          or n.grip_pub.get_subscription_count() == 0):
         rclpy.spin_once(n, timeout_sec=0.1)
     for t in a.tests:
         {'hold': lambda: test_hold(n),
+         'interp': lambda: test_interp(n),
          'a': lambda: test_a(n),
          'c': lambda: test_c(n),
          'step': lambda: test_step(n, a.step, a.joint),

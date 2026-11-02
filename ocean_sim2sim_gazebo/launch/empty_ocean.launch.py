@@ -15,8 +15,11 @@ from launch import LaunchDescription
 from launch.actions import AppendEnvironmentVariable
 from launch.actions import DeclareLaunchArgument
 from launch.actions import OpaqueFunction
+from launch.actions import RegisterEventHandler
+from launch.event_handlers import OnShutdown
 from launch.substitutions import LaunchConfiguration
 import os
+import signal
 
 import vrx_gz.launch
 from vrx_gz.model import Model
@@ -53,7 +56,27 @@ def launch(context, *args, **kwargs):
         launch_processes.extend(vrx_gz.launch.competition_bridges(
             world_name_base, flag('competition_mode')))
 
+    launch_processes.append(RegisterEventHandler(OnShutdown(on_shutdown=[OpaqueFunction(function=stop_gazebo)])))
     return launch_processes
+
+
+def stop_gazebo(_context):
+    """SIGINT the Gazebo server(s) of this launch when the launch shuts down by itself.
+
+    ros_gz_sim starts Gazebo as `sh -c "ruby gz sim ..."`. When the launch ends by itself (e.g. a node
+    requested a shutdown), it signals only that wrapper, and the real `gz sim` server keeps running.
+    Ctrl+C in a terminal does not have this problem (the whole process group gets the signal).
+    The server is in our process group, so find it there.
+    """
+    group = os.getpgrp()
+    for pid in filter(str.isdigit, os.listdir('/proc')):
+        try:
+            with open(f'/proc/{pid}/cmdline', 'rb') as f:
+                cmd = f.read().replace(b'\0', b' ').strip()
+            if cmd.startswith(b'gz sim') and os.getpgid(int(pid)) == group:
+                os.kill(int(pid), signal.SIGINT)
+        except (OSError, ProcessLookupError):
+            pass
 
 
 def generate_launch_description():

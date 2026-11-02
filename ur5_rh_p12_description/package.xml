@@ -15,7 +15,7 @@
   <exec_depend>realsense2_description</exec_depend>
   <!-- controllers in config/ros2_controllers.yaml -->
   <exec_depend>joint_state_broadcaster</exec_depend>
-  <exec_depend>forward_command_controller</exec_depend>
+  <exec_depend>joint_trajectory_controller</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

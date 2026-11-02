@@ -6,7 +6,8 @@
   next to the arm itself. It only emits the <ros2_control> tag; the hardware plugin is an arg so the
   same file works for Gazebo (default) or another system.
 
-    arm 6 joints + rh_r1_joint : position command, position / velocity state
+    arm 6 joints               : position command, position / velocity / effort state
+    rh_r1_joint                : position command, position / velocity state
     rh_r2, rh_l1, rh_l2        : mimic joints of rh_r1_joint (URDF <mimic>), state only
 
   Initial joint values = home pose of the Isaac Sim training setup:
@@ -16,13 +17,16 @@
 
   <xacro:arg name="ros2_control_plugin" default="gz_ros2_control/GazeboSimSystem"/>
 
-  <xacro:macro name="ur5_rh_p12_position_joint" params="name initial">
+  <xacro:macro name="ur5_rh_p12_position_joint" params="name initial effort:=false">
     <joint name="${name}">
       <command_interface name="position"/>
       <state_interface name="position">
         <param name="initial_value">${initial}</param>
       </state_interface>
       <state_interface name="velocity"/>
+      <xacro:if value="${effort}">
+        <state_interface name="effort"/>
+      </xacro:if>
     </joint>
   </xacro:macro>
 
@@ -38,12 +42,12 @@
       <plugin>$(arg ros2_control_plugin)</plugin>
     </hardware>
 
-    <xacro:ur5_rh_p12_position_joint name="shoulder_pan_joint"  initial="0.0"/>
-    <xacro:ur5_rh_p12_position_joint name="shoulder_lift_joint" initial="-1.5708"/>
-    <xacro:ur5_rh_p12_position_joint name="elbow_joint"         initial="1.5708"/>
-    <xacro:ur5_rh_p12_position_joint name="wrist_1_joint"       initial="-1.5708"/>
-    <xacro:ur5_rh_p12_position_joint name="wrist_2_joint"       initial="-1.5708"/>
-    <xacro:ur5_rh_p12_position_joint name="wrist_3_joint"       initial="0.0"/>
+    <xacro:ur5_rh_p12_position_joint name="shoulder_pan_joint"  initial="0.0" effort="true"/>
+    <xacro:ur5_rh_p12_position_joint name="shoulder_lift_joint" initial="-1.5708" effort="true"/>
+    <xacro:ur5_rh_p12_position_joint name="elbow_joint"         initial="1.5708" effort="true"/>
+    <xacro:ur5_rh_p12_position_joint name="wrist_1_joint"       initial="-1.5708" effort="true"/>
+    <xacro:ur5_rh_p12_position_joint name="wrist_2_joint"       initial="-1.5708" effort="true"/>
+    <xacro:ur5_rh_p12_position_joint name="wrist_3_joint"       initial="0.0" effort="true"/>
 
     <xacro:ur5_rh_p12_position_joint name="rh_r1_joint" initial="0.0"/>
     <xacro:ur5_rh_p12_mimic_joint name="rh_r2"/>

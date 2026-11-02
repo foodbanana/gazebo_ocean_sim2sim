@@ -1,20 +1,48 @@
 # ros2_control controllers for UR5 + RH-P12-RN (used with ur5_rh_p12.ros2_control.xacro)
 #
-#   arm_controller     : 6 arm joints, absolute joint positions [rad]  (std_msgs/Float64MultiArray on /arm_controller/commands)
-#   gripper_controller : rh_r1_joint [rad], 0 (open) ~ 1.1351 (closed) (std_msgs/Float64MultiArray on /gripper_controller/commands)
-#   joint_state_broadcaster : /joint_states (arm 6 + gripper 4)
+#   joint_state_broadcaster : all 10 joints (arm 6 + fingers 4), 240 Hz -> /joint_state_broadcaster/joint_states
+#                             (robot_state_publisher and the interface node read this)
+#   arm_state_broadcaster   : arm 6 joints only, position / velocity / effort, 120 Hz -> /joint_states
+#                             (same as the real UR driver and the Isaac Sim interface)
+#   arm_controller          : joint_trajectory_controller, 6 arm joints
+#   gripper_controller      : joint_trajectory_controller, rh_r1_joint (0 open ~ 1.1351 rad closed)
+#
+# The trajectory controllers are fed by ocean_sim2sim_interface (/joint_command, /gripper/command).
 controller_manager:
   ros__parameters:
-    update_rate: 250  # [Hz] = Gazebo physics step 4 ms
+    update_rate: 240  # [Hz] = Gazebo physics step (empty_ocean.sdf, 1/240 s)
 
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
 
+    arm_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
     arm_controller:
-      type: forward_command_controller/ForwardCommandController
+      type: joint_trajectory_controller/JointTrajectoryController
 
     gripper_controller:
-      type: forward_command_controller/ForwardCommandController
+      type: joint_trajectory_controller/JointTrajectoryController
+
+joint_state_broadcaster:
+  ros__parameters:
+    use_local_topics: true   # ~/joint_states = /joint_state_broadcaster/joint_states
+
+arm_state_broadcaster:
+  ros__parameters:
+    update_rate: 120         # [Hz] every 2nd physics step
+    use_local_topics: false  # /joint_states
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    interfaces:
+      - position
+      - velocity
+      - effort
 
 arm_controller:
   ros__parameters:
@@ -25,18 +53,33 @@ arm_controller:
       - wrist_1_joint
       - wrist_2_joint
       - wrist_3_joint
-    interface_name: position
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    # A new trajectory starts from the last commanded (interpolated) target, not from the measured
+    # position = Isaac Sim ArmBridge ("start from the target currently being interpolated").
+    interpolate_from_desired_state: true
+    allow_nonzero_velocity_at_trajectory_end: true
+    constraints:
+      goal_time: 0.0
+      stopped_velocity_tolerance: 0.0
 
 gripper_controller:
   ros__parameters:
     joints:
       - rh_r1_joint
-    interface_name: position
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    # The interface node sends [actual position at t=0, goal at t=distance/profile_velocity]
+    # = Isaac Sim GripperProfile (constant speed from the actual finger position).
+    interpolate_from_desired_state: false
+    allow_nonzero_velocity_at_trajectory_end: true
+    constraints:
+      goal_time: 0.0
+      stopped_velocity_tolerance: 0.0
 
 # gz_ros2_control (Gazebo only): position command -> joint velocity = gain * error * update_rate.
-#   0.1 (default): 50 Hz staircase-sine tracking latency 38 ms, RMS 1.55 deg
-#   0.15         : latency 26-30 ms, RMS 1.06 deg  <- middle of the Isaac Sim drive tuning result (19-34 ms, 0.7-1.3 deg)
-#   0.2          : latency 22 ms, RMS 0.85 deg
+#   Measured at 250 Hz (docs/gain_tuning.md): 0.1 -> 50 Hz staircase-sine latency 38 ms, 0.15 -> 26-30 ms, 0.2 -> 22 ms.
+#   0.15 = middle of the Isaac Sim drive tuning result (19-34 ms). At 240 Hz: tau = 1 / (0.15 * 240) = 27.8 ms.
 gz_ros_control:
   ros__parameters:
     position_proportional_gain: 0.15

@@ -3,8 +3,11 @@
 작성: 2026-11-02 · Gazebo Harmonic, ROS 2 Jazzy, gz_ros2_control 1.2.19
 
 WAM-V 상판에 붙인 UR5 6축과 RH-P12-RN 그리퍼를 Gazebo 안에서 ros2_control 로 움직인다.
-이 단계는 **"관절 위치 명령을 주면 관절이 따라간다"** 까지다. Isaac Sim 과 같은 토픽 이름·형식
-(`/joint_command`, `/gripper/command` raw 0~1150, 33 ms 보간, 그리퍼 등속 이동)은 다음 단계(변환 노드)에서 맞춘다.
+
+> **갱신 (인터페이스 단계)**: 정책·텔레옵이 쓰는 토픽 (`/joint_command`, `/gripper/command` raw 0~1150, 33 ms 보간,
+> 그리퍼 등속 이동, 팔 6 개 `/joint_states`) 은 [`interface.md`](interface.md) 의 인터페이스 노드가 맞춘다.
+> 그에 맞춰 컨트롤러를 forward_command_controller → **joint_trajectory_controller** 로 바꾸고, 물리를 **240 Hz** 로 바꿨다.
+> 이 문서의 1·2·3·6 장은 지금 상태, 4·5 장의 게인 측정은 당시 (250 Hz, forward 컨트롤러, 보간 없음) 기록이다.
 
 ---
 
@@ -25,17 +28,17 @@ ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py
 
 ### 손으로 움직여 보기
 
+명령은 인터페이스 토픽으로 보낸다 ([`interface.md`](interface.md) 1 장).
+
 ```bash
-# 팔 6축 절대 위치 [rad] (순서: shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3)
-ros2 topic pub --once /arm_controller/commands std_msgs/msg/Float64MultiArray \
-  "{data: [0.3, -1.5708, 1.5708, -1.5708, -1.5708, 0.0]}"
+ros2 topic pub --once /joint_command sensor_msgs/msg/JointState \
+  "{name: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint],
+    position: [0.3, -1.5708, 1.5708, -1.5708, -1.5708, 0.0]}"
+ros2 topic pub --once /gripper/command std_msgs/msg/Float64 "{data: 1150.0}"   # 닫기 (0 = 열기)
 
-# 그리퍼 rh_r1_joint [rad]: 0 열림 ~ 1.1351 닫힘
-ros2 topic pub --once /gripper_controller/commands std_msgs/msg/Float64MultiArray "{data: [1.0]}"
-
-# 상태
 ros2 control list_controllers
-ros2 topic echo /joint_states
+ros2 topic echo /joint_states                              # 팔 6 개, 120 Hz
+ros2 topic echo /joint_state_broadcaster/joint_states      # 손가락 포함 10 개, 240 Hz
 ```
 
 ---
@@ -48,9 +51,10 @@ ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py
  ├─ ocean_sim2sim_gazebo/empty_ocean.launch.py  (urdf:= 위 파일)
  │    ├─ gz sim empty_ocean.sdf
  │    ├─ VRX: URDF → SDF → 원점에 스폰, /wamv/* · /clock 브리지
- │    └─ (모델 안) gz_ros2_control 플러그인 → controller_manager (250 Hz)
+ │    └─ (모델 안) gz_ros2_control 플러그인 → controller_manager (240 Hz)
  ├─ robot_state_publisher  (robot_description, gz_ros2_control 이 여기서 URDF 를 읽음)
- └─ spawner: joint_state_broadcaster, arm_controller, gripper_controller
+ ├─ spawner: joint_state_broadcaster, arm_state_broadcaster, arm_controller, gripper_controller
+ └─ ocean_sim2sim_interface  (interface.md)
 ```
 
 ### 파일
@@ -60,6 +64,7 @@ ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py
 | `ur5_rh_p12_description` (팔) | `urdf/ur5_rh_p12.ros2_control.xacro` | `<ros2_control>` 태그. 팔 6축 + `rh_r1_joint` = position 명령, mimic 3개 = 상태만. 시작값 = Isaac Sim 홈 자세 |
 | | `config/ros2_controllers.yaml` | 컨트롤러 + `gz_ros_control` 게인 |
 | `ocean_sim2sim_description` (보트) | `urdf/wamv_with_arm.urdf.xacro` | 팔의 control xacro 를 include 하고 `gz_ros2_control` 플러그인을 붙임 |
+| `ocean_sim2sim_interface` | `config/ur5_rh_p12_interface.yaml` | 인터페이스 노드 설정 (interface.md) |
 | `ocean_sim2sim_bringup` | `launch/wamv_arm.launch.py` | 위 구조를 한 번에 실행 |
 
 ### 팔 교체
@@ -72,19 +77,22 @@ ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py
 | `arm_controllers_yaml` | `ur5_rh_p12_description/config/ros2_controllers.yaml` |
 
 다른 팔은 이 두 파일을 그 팔 패키지에 만들고 `arm_xacro`·`arm_root_link` 와 함께 넘긴다.
-launch 의 spawner 가 부르는 컨트롤러 이름(`arm_controller`, `gripper_controller`)은 yaml 과 맞춘다.
+launch 의 spawner 가 부르는 컨트롤러 이름(`joint_state_broadcaster`, `arm_state_broadcaster`, `arm_controller`,
+`gripper_controller`)은 yaml 과 맞추고, 인터페이스 설정은 `interface_config:=` 로 넘긴다.
 
 ---
 
 ## 3. 컨트롤러
 
-| 이름 | 종류 | 관절 | 명령 토픽 |
+| 이름 | 종류 | 관절 | 토픽 |
 |---|---|---|---|
-| `joint_state_broadcaster` | JointStateBroadcaster | 10 개 (팔 6 + 손가락 4) | → `/joint_states` |
-| `arm_controller` | forward_command_controller (position) | 팔 6 | `/arm_controller/commands` (Float64MultiArray, 절대각 rad) |
-| `gripper_controller` | forward_command_controller (position) | `rh_r1_joint` | `/gripper_controller/commands` (rad) |
+| `joint_state_broadcaster` | JointStateBroadcaster | 10 개 (팔 6 + 손가락 4), 240 Hz | → `/joint_state_broadcaster/joint_states` |
+| `arm_state_broadcaster` | JointStateBroadcaster | 팔 6, position·velocity·effort, 120 Hz | → `/joint_states` |
+| `arm_controller` | joint_trajectory_controller (position) | 팔 6 | `/arm_controller/joint_trajectory` (인터페이스 노드가 보냄) |
+| `gripper_controller` | joint_trajectory_controller (position) | `rh_r1_joint` | `/gripper_controller/joint_trajectory` (인터페이스 노드가 보냄) |
 
-- `controller_manager` `update_rate` 250 Hz = 물리 스텝 4 ms
+- `controller_manager` `update_rate` 240 Hz = 물리 스텝 1/240 s
+- `arm_controller`: `interpolate_from_desired_state: true` (새 궤적을 마지막 목표에서 시작 = Isaac Sim ArmBridge)
 - 시작 자세: `initial_value` = Isaac Sim `home_pose` `[0, -1.5708, 1.5708, -1.5708, -1.5708, 0]`, 그리퍼 0 (열림).
   컨트롤러가 뜨기 전에도 이 자세에서 시작한다 (팔이 처지지 않음)
 
@@ -96,7 +104,7 @@ launch 의 spawner 가 부르는 컨트롤러 이름(`arm_controller`, `gripper_
 관절 속도 명령 = position_proportional_gain × (목표 − 현재) × update_rate
 ```
 
-= 1 차 지연 (시상수 = 1 / (gain × 250 Hz)). DART 는 이 속도를 관절 effort 한계 (UR5 150 / 28 Nm) 안에서 강하게 지킨다.
+= 1 차 지연 (시상수 = 1 / (gain × update_rate): 지금 240 Hz 에서 27.8 ms, 측정 당시 250 Hz 에서 26.7 ms). DART 는 이 속도를 관절 effort 한계 (UR5 150 / 28 Nm) 안에서 강하게 지킨다.
 Isaac Sim 은 PD 토크 drive (stiffness·damping) 라 방식이 다르다 → 아래 시험으로 응답을 맞췄다.
 
 ---
@@ -142,14 +150,12 @@ Isaac Sim drive 튜닝(`data_collection_ur5_gripper/docs/drive_tuning.md` 8장)�
 
 ---
 
-## 6. Isaac Sim 과 남은 차이 (다음 단계에서 다룸)
+## 6. Isaac Sim 과 남은 차이
+
+토픽·보간·그리퍼 속도·`/joint_states` 는 인터페이스 단계에서 맞췄다 ([`interface.md`](interface.md) 6 장).
 
 | 항목 | Isaac Sim | Gazebo 지금 | 다음 |
 |---|---|---|---|
-| 토픽 | `/joint_command` (JointState), `/gripper/command` raw 0~1150 | `/arm_controller/commands`, `/gripper_controller/commands` (rad) | 변환 노드 |
-| `/joint_states` | 팔 6 개, 120 Hz | 10 개 (손가락 포함), 250 Hz | 변환 노드 |
-| 명령 보간 | 33 ms 선형 보간 | 없음 | 변환 노드 |
-| 그리퍼 속도 | 등속 0.516 rad/s (닫힘 약 2.2 s) | 약 0.2 s 에 닫힘 | 변환 노드 (GripperProfile) |
 | 그리퍼 힘 | max_force 2.28 Nm (실물 400 mA) | URDF effort 1000 (원본 값) | 드론 파지 단계 |
 | 중력 처짐 | 홈 자세 0.033° (PD 라 약간 처짐) | 0.000° (속도 명령이 단단히 버팀) | 파지 단계에서 영향 확인 |
 

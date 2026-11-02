@@ -3,8 +3,10 @@
 <sdf version="1.9">
   <world name="empty_ocean">
 
-    <physics name="4ms" type="dart">
-      <max_step_size>0.004</max_step_size>
+    <!-- 240 Hz (VRX default 250 Hz): 30 Hz (camera, gripper topics) = every 8 steps and
+         120 Hz (/joint_states, as in Isaac Sim / real UR) = every 2 steps, so stamps line up -->
+    <physics name="240hz" type="dart">
+      <max_step_size>0.004166666666666667</max_step_size>
       <real_time_factor>1.0</real_time_factor>
       <!-- Bullet instead of the default ODE collision detector: with self-collision on
            (arm <-> boat, arm <-> itself) ODE ran at RTF ~0.4, Bullet at 1.0 -->

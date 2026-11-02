@@ -15,10 +15,12 @@
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>controller_manager</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ocean_sim2sim_interface</exec_depend>
   <!-- scripts/drive_test.py -->
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
+  <exec_depend>control_msgs</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

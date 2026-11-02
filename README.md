@@ -13,7 +13,8 @@ VRX is used as a dependency and is not modified.
 | `ocean_sim2sim_gazebo` | `empty_ocean` world (VRX Coast Waves only, no terrain) and launch files |
 | `ur5_rh_p12_description` | UR5 (CB3) + ROBOTIS RH-P12-RN(A) gripper + RealSense D435i wrist camera as one URDF |
 | `ocean_sim2sim_description` | WAM-V (VRX hull, hydrodynamics, 2 aft thrusters, IMU) with a pluggable robot arm on the deck |
-| `ocean_sim2sim_bringup` | One launch file: ocean + WAM-V with the arm + ros2_control controllers |
+| `ocean_sim2sim_interface` | Isaac Sim / real-robot topics on top of ros2_control (`/joint_command`, `/gripper/command`, `/joint_states`, `/gripper/joint_states`) |
+| `ocean_sim2sim_bringup` | One launch file: ocean + WAM-V with the arm + controllers + interface node |
 
 ## Requirements
 
@@ -75,15 +76,19 @@ is not welded to the world.
 
 ## Arm control (ros2_control)
 
-`gz_ros2_control` with `forward_command_controller` (position) for the 6 arm joints and the gripper,
-plus `joint_state_broadcaster`. Details and test results: [`docs/ros2_control.md`](docs/ros2_control.md).
+`gz_ros2_control` with `joint_trajectory_controller` (position) for the 6 arm joints and the gripper,
+plus two `joint_state_broadcaster`s (all joints at 240 Hz, arm-only `/joint_states` at 120 Hz). Physics runs at 240 Hz. Details and test results: [`docs/ros2_control.md`](docs/ros2_control.md).
 Gain tuning and overshoot notes: [`docs/gain_tuning.md`](docs/gain_tuning.md)
 (measure with `ros2 run ocean_sim2sim_bringup drive_test.py`).
 
+Policies and teleop use the same topics as the real robot and the Isaac Sim setup
+([`docs/interface.md`](docs/interface.md)):
+
 ```bash
-ros2 topic pub --once /arm_controller/commands std_msgs/msg/Float64MultiArray \
-  "{data: [0.3, -1.5708, 1.5708, -1.5708, -1.5708, 0.0]}"
-ros2 topic pub --once /gripper_controller/commands std_msgs/msg/Float64MultiArray "{data: [1.0]}"
+ros2 topic pub --once /joint_command sensor_msgs/msg/JointState \
+  "{name: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint],
+    position: [0.3, -1.5708, 1.5708, -1.5708, -1.5708, 0.0]}"
+ros2 topic pub --once /gripper/command std_msgs/msg/Float64 "{data: 1150.0}"   # raw 0 (open) ~ 1150 (closed)
 ```
 
 ## Robot arm description
