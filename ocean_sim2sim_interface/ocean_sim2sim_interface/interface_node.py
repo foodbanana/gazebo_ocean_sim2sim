@@ -12,10 +12,11 @@ so a policy or teleop node cannot tell Isaac Sim, Gazebo and the real robot apar
   /gripper/command  std_msgs/Float64        raw 0 (open) ~ raw_max (closed). Outside the range = error.
                     When the goal changes the gripper moves at profile_velocity [rad/s] from the ACTUAL
                     finger position (real Dynamixel profile velocity).
-                    Gazebo only: the joint target is kept command_margin [rad] below the joint limit (upper).
-                    A joint driven exactly onto its limit gets stuck in DART and does not open again
-                    (measured: raw 1149 opens, raw 1150 = exact limit stays closed). Real / Isaac Sim fingers
-                    stop on each other at about 1.121 rad, so 0.001 rad below the limit changes nothing.
+                    Gazebo only: the joint target is kept command_margin [rad] inside the joint limits (both ends).
+                    A joint driven exactly onto its limit gets stuck in DART and does not move away again
+                    (measured: raw 1149 opens, raw 1150 = exact upper limit stays closed; opened exactly to 0 it
+                    does not close). Real / Isaac Sim fingers stop on each other at about 1.121 rad, and 0.001 rad
+                    open (0.05 mm at the pad) changes nothing.
   /gripper/joint_states, /gripper/target  sensor_msgs/JointState, name [gripper.name], position = raw.
                     present = rh_r1 [rad] * raw_max / upper (clamped), target = last goal raw.
                     Published once per loop tick with the tick stamp (below).
@@ -244,7 +245,7 @@ class InterfaceNode(Node):
 
     def _apply_gripper(self, v):
         self.goal_raw = v
-        goal = min(v * self.upper / self.raw_max, self.upper - self.command_margin)
+        goal = min(max(v * self.upper / self.raw_max, self.command_margin), self.upper - self.command_margin)
         if goal == self.goal_rad:
             return                        # same goal repeated: keep moving as before (GripperProfile.set_goal)
         self.goal_rad = goal

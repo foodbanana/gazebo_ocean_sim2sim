@@ -110,7 +110,10 @@ def launch(context, *args, **kwargs):
                    '/model/wamv/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
                    '/drone/detach@std_msgs/msg/Empty]gz.msgs.Empty',
                    '/drone/attach@std_msgs/msg/Empty]gz.msgs.Empty',
-                   '/drone/state@std_msgs/msg/String[gz.msgs.StringMsg'],
+                   '/drone/state@std_msgs/msg/String[gz.msgs.StringMsg',
+                   # evaluation only (grasp judge), not policy inputs
+                   '/drone/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+                   '/drone/contacts@ros_gz_interfaces/msg/Contacts[gz.msgs.Contacts'],
         remappings=[('/model/wamv/odometry', '/sim/boat_odometry')],
         parameters=[{'use_sim_time': True}])
     scene = Node(

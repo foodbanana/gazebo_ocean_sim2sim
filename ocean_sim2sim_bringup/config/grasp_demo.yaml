@@ -1,0 +1,59 @@
+# Scripted drone grasp demo + judge (scripts/grasp_demo.py, docs/grasp_demo.md).
+# Values = Isaac Sim data_collection_ur5_gripper isaacsim/config/grasp_demo.yaml (2026-10-22), so both sims run the same
+# sequence and are judged the same way. Lengths m, speeds m/s, angles rad (judge thresholds carry their unit in the name).
+#
+# Sequence (teleop-like: arm joint targets on /joint_command at control_hz):
+#   S0 joint move to home_pose (Isaac Sim starts there) -> S1 joint move to seed_pose -> IK to pregrasp (pregrasp_below
+#   under the grasp pose) -> S2 straight up at approach_speed -> S3 close the gripper, keep holding kill_delay ->
+#   S4 drone motors off (/sim/drone_kill), hold_time -> S5 end_wait
+
+control_hz: 50
+max_dq_per_tick: 0.063        # rad per control tick (teleop command change limit)
+ik_damping: 0.02
+# IK error from the measured joints (Isaac Sim) or from the commanded joints (Gazebo). Isaac Sim's demo writes the joint
+# targets straight into the drives (no delay); here they go through the ROS interface like a policy's (30 Hz loop, ~60 ms).
+# The measured-joint version adds up the error every tick (an integrator) and with that delay swung +-20 mm and hit the
+# drone in all 5 cases (2026-11-03) -> command: kinematic IK on the commanded joints, the arm follows with its own lag
+ik_feedback: command
+home_pose: [0.0, -1.5708, 1.5708, -1.5708, -1.5708, 0.0]          # Isaac Sim drive home_pose
+# gripper up, 21 cm under the default drone position. wrist_1 = 1.3963 - 2 pi (turning the other way the gripper hits the arm)
+seed_pose: [-0.1888, -0.7854, 0.9599, -4.8869, -1.5708, 0.1888]
+joint_speed: 0.5              # rad/s, S0 / S1
+tool_x_in_drone: [-1.0, 0.0, 0.0]   # gripper x axis = drone -x (wrist camera away from the drone front antenna)
+# Grasp point: TCP in the drone body frame [m], as Isaac Sim's planner found it for its drone collision
+# (gripper_geom.plan_grasp_from_below: waist 81.1 mm, contact at 20.3 deg, 2.3 mm clearance gripper body - drone bottom).
+# Used as given (same input); the Gazebo drone hulls are CoACD (waist 82.8 mm), docs/scene.md
+tcp_in_drone: [0.0, -0.0013, -0.0045]
+pregrasp_below: 0.15
+move_speed: 0.10              # S1 straight line to the pregrasp pose
+approach_speed: 0.03          # S2
+approach_track_until: 0.03    # S2: follow the drone until this much height is left, then keep that goal
+reach: {pos_tol: 0.0015, rot_tol_deg: 0.5, timeout: 8.0}
+grip_close_timeout: 5.0
+kill_delay: 1.0               # s, grasped -> motors off
+hold_time: 2.5                # s after motors off
+end_wait: 2.0
+gripper_raw_max: 1150.0       # /gripper/command close; /gripper/joint_states raw -> rad: raw / raw_max * upper
+gripper_upper: 1.1351         # rad (ocean_sim2sim_interface config gripper.upper)
+max_lead: 0.05                # rad, joint target at most this far ahead of the measured joint (anti wind-up, Isaac Sim DiffIK)
+
+judge:
+  stop_vel: 0.01
+  stop_time: 0.2
+  empty_close_deg: 62.0
+  contact_force: 1.0
+  hold_time: 2.5
+  settle_max_mm: 15.0
+  still_window: 0.5
+  still_mm: 0.5
+  hold_rot_deg: 10.0
+  drop_mm: 30.0
+
+cases:
+  success: {}
+  offset_y: {tcp_offset: [0.0, 0.010, 0.0]}     # 10 mm in the closing direction (world)
+  offset_x: {tcp_offset: [0.005, 0.0, 0.0]}     # 5 mm along the body
+  empty: {drone_offset: [0.0, -0.40, 0.20]}     # Isaac Sim: drone moved, arm aims at the default position.
+                                                # Gazebo: the arm aims at (drone - drone_offset) instead (same relative miss)
+  miss: {tcp_offset: [0.0, 0.0, -0.04]}         # grasp 4 cm too low
+  # drop (Isaac Sim: gripper force 0.05 Nm at motor stop) is not possible: no run-time effort limit change in Gazebo

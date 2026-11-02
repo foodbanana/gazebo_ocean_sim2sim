@@ -79,6 +79,7 @@ def build(c):
         <geometry><mesh><uri>model://iris_075/meshes/collision/hull_{i:02d}.stl</uri></mesh></geometry>
         <surface><friction><ode><mu>{mu}</mu><mu2>{mu}</mu2></ode></friction></surface>
       </collision>''' for i in range(len(hulls)))
+    coll_names = '\n'.join(f'          <collision>hull_{i:02d}</collision>' for i in range(len(hulls)))
     rot_vis = '\n'.join(f'''      <visual name="rotor_{i}">
         <pose>{p[0]:.6f} {p[1]:.6f} {p[2]:.6f} 0 0 {yaw_s}</pose>
         <geometry><mesh><uri>model://iris_075/{mesh}</uri><scale>{scale} {scale} {scale}</scale></mesh></geometry>
@@ -103,6 +104,14 @@ def build(c):
       </visual>
 {rot_vis}
 {coll}
+      <!-- contacts of all hulls (grasp judge: finger forces, docs/grasp_demo.md) -->
+      <sensor name="contacts" type="contact">
+        <always_on>true</always_on><update_rate>240</update_rate><topic>/drone/contacts</topic>
+        <contact>
+{coll_names}
+          <topic>/drone/contacts</topic>
+        </contact>
+      </sensor>
     </link>
 
     <!-- world-fixed hover: hold the body on the model "drone_anchor" (welded to the world) until /drone/detach -->
@@ -113,6 +122,14 @@ def build(c):
       <attach_topic>/drone/attach</attach_topic>
       <detach_topic>/drone/detach</detach_topic>
       <output_topic>/drone/state</output_topic>
+    </plugin>
+    <!-- drone body pose (world) for the grasp demo / judge -->
+    <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>world</odom_frame>
+      <robot_base_frame>drone</robot_base_frame>
+      <odom_topic>/drone/odometry</odom_topic>
+      <odom_publish_frequency>60</odom_publish_frequency>
+      <dimensions>3</dimensions>
     </plugin>
   </model>
 </sdf>

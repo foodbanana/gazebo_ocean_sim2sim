@@ -26,7 +26,7 @@ ocean_sim2sim_interface:
       raw_max: 1150.0                  # raw 0 (open) ~ 1150 (closed), real gripper node
       upper: 1.13514578304             # [rad] rh_r1_joint at raw_max (URDF limit)
       profile_velocity: 0.516          # [rad/s] = 1.1351 rad / 2.2 s (real close / open ~2.2 s)
-      command_margin: 0.001            # [rad] Gazebo only: keep the joint target this far below the limit
+      command_margin: 0.001            # [rad] Gazebo only: keep the joint target this far inside the limits
                                        #   (a joint driven exactly onto its limit gets stuck in DART)
       command_topic: /gripper/command
       joint_states_topic: /gripper/joint_states
@@ -50,6 +50,7 @@ ocean_sim2sim_scene:
     arm_joints: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint]
     init_pose: [-0.1889, -1.0776, 1.7304, -2.2242, 1.5700, -2.9566]   # Isaac Sim init_poses.under_drone [rad]
     gripper_joint: rh_r1_joint
+    gripper_open: 0.001                # [rad] reset opens to here (exactly 0 = on the limit: stuck in DART)
     reset_arm_time: 2.0                # [s sim] arm to init_pose, gripper open (smooth: no joint teleport from ROS)
     seed: -1                           # -1 = start time (different every session). Same seed = same drone sequence
     drone_offset: 0.03                 # [m] uniform +- per axis around the chosen point (Isaac Sim reset.drone_offset)

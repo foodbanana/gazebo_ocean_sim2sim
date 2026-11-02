@@ -122,6 +122,9 @@ class SceneNode(Node):
             raise RuntimeError(f'init_pose has {len(self.init_pose)} values for {len(self.arm_joints)} arm joints')
         self.gripper_joint = str(p('gripper_joint', 'rh_r1_joint').value)
         self.reset_arm_time = float(p('reset_arm_time', 2.0).value)
+        # open = this far inside the lower limit: a joint driven exactly onto its limit gets stuck in DART (interface
+        # gripper.command_margin)
+        self.gripper_open = float(p('gripper_open', 0.001).value)
         self.use_targets = bool(p('use_drone_targets', True).value)
         flat = [float(v) for v in p('drone_targets_base', rclpy.Parameter.Type.DOUBLE_ARRAY).value]
         names = list(p('drone_target_names', rclpy.Parameter.Type.STRING_ARRAY).value)
@@ -270,6 +273,9 @@ class SceneNode(Node):
 
     def next_target(self, k):
         """Drone position (base frame) for reset number k: (name, target, offset)."""
+        # read now: the grasp demo switches these at run time (ros2 param set), e.g. targets off + offset 0 = drone_pos_base
+        self.use_targets = bool(self.get_parameter('use_drone_targets').value)
+        self.drone_offset = float(self.get_parameter('drone_offset').value)
         if self.use_targets:
             if not self.order:
                 self.order = list(range(len(self.targets)))
@@ -310,7 +316,7 @@ class SceneNode(Node):
             phases['remove_drone'], t = self.now() - t, self.now()
             # 3. arm to the start pose, gripper open
             self._move_joints(self.pub_arm, self.arm_joints, self.init_pose, self.reset_arm_time)
-            self._move_joints(self.pub_grip, [self.gripper_joint], [0.0], self.reset_arm_time)
+            self._move_joints(self.pub_grip, [self.gripper_joint], [self.gripper_open], self.reset_arm_time)
             self.wait_sim(self.reset_arm_time + 0.3)
             phases['arm_to_start'], t = self.now() - t, self.now()
             # 4. new hover position, 5. spawn
