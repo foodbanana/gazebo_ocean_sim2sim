@@ -307,7 +307,10 @@ def test_g3(n, mass, mu, rate, fmax=80.0, top=0.03):
 
 
 def test_hold(n, name, size, mass, mu, sec, top=-0.015):
-    p, q, squeeze, _ = grasp_box(n, size, mass, mu, top_above_tcp=top)   # pad contact, as G3
+    p, q, squeeze, forces = grasp_box(n, size, mass, mu, top_above_tcp=top)   # pad contact, as G3
+    if n.debug:
+        print(f'  {name} contacts [N]: ' + ('  '.join(f'{k} {v:.1f}' for k, v in sorted(forces.items())) if forces else str(forces))
+              + '   fingers ' + ' '.join(f'{n.q[j]:.4f}' for j in FINGERS) + '   tau ' + ' '.join(f'{n.eff[j]:+.3f}' for j in FINGERS))
     sl = Slip(n)
     sl.start()
     n.box_log.clear()
@@ -317,6 +320,9 @@ def test_hold(n, name, size, mass, mu, sec, top=-0.015):
         qs.append([n.q[j] for j in ARM + FINGERS])
         n.wait(0.01)
     rel = [sl.vec(b) for b in n.box_log[::10]]
+    if n.debug:
+        step = max(1, len(rel) // 6)
+        print('  grasp point in TCP frame over time [mm]: ' + '  '.join(str([round(v * 1000, 2) for v in r]) for r in rel[::step]))
     slip = max(math.hypot(*r) for r in rel) * 1000
     jit_box = max(max(r[k] for r in rel) - min(r[k] for r in rel) for k in range(3)) * 1000
     jit_q = max(max(s[k] for s in qs) - min(s[k] for s in qs) for k in range(len(qs[0])))

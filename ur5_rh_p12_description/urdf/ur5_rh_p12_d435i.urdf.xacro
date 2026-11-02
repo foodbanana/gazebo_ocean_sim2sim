@@ -49,8 +49,14 @@
        so they stay locked to rh_r1_joint (docs/grasp.md). -->
   <xacro:arg name="gripper_effort_limit" default="1000"/>
   <xacro:arg name="gripper_mimic_effort_limit" default="1000"/>
-  <!-- gripper collision mesh folder ('' = the visual meshes) -->
-  <xacro:arg name="gripper_collision_dir" default=""/>
+  <!-- collision meshes:
+       original : the meshes as given (an importer that approximates them itself, e.g. Isaac Sim / PhysX)
+       convex   : what Isaac Sim actually collides with: convex hull per link, forearm convex decomposition
+                  (meshes/collision_convex, scripts/build_collision_hulls.py). Gazebo uses this (docs/grasp.md). -->
+  <xacro:arg name="collision_meshes" default="original"/>
+  <xacro:property name="cm" value="$(arg collision_meshes)"/>
+  <xacro:unless value="${cm in ('original', 'convex')}">${xacro.fatal('collision_meshes must be original or convex: ' + cm)}</xacro:unless>
+  <xacro:property name="coll_dir" value="${pkg + '/meshes/collision_convex' if cm == 'convex' else pkg + '/meshes'}"/>
 
   <xacro:property name="pkg" value="package://ur5_rh_p12_description"/>
   <xacro:property name="t_mount" value="$(arg mount_thickness)"/>
@@ -91,7 +97,7 @@
     joint_limits_parameters_file="$(find ur_description)/config/ur5/joint_limits.yaml"
     kinematics_parameters_file="$(arg kinematics_params)"
     physical_parameters_file="$(find ur_description)/config/ur5/physical_parameters.yaml"
-    visual_parameters_file="$(find ur_description)/config/ur5/visual_parameters.yaml">
+    visual_parameters_file="${'$(find ur5_rh_p12_description)/config/ur5_visual_parameters_convex.yaml' if cm == 'convex' else '$(find ur_description)/config/ur5/visual_parameters.yaml'}">
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </xacro:ur_robot>
 
@@ -113,7 +119,7 @@
     <!-- plate outline, z 0 ~ 5 mm (convex) -->
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry><mesh filename="${pkg}/meshes/mount/wrist_mount_collision_plate.stl" scale="0.001 0.001 0.001"/></geometry>
+      <geometry><mesh filename="${coll_dir}/mount/wrist_mount_collision_plate.stl" scale="0.001 0.001 0.001"/></geometry>
     </collision>
     <!-- camera tab, full thickness (z -6.45 ~ 5 mm) -->
     <collision>
@@ -165,7 +171,7 @@
   </link>
 
   <!-- ================= gripper ================= -->
-  <xacro:rh_p12_rn_a prefix="" parent="gripper_bracket" mesh_dir="${pkg}/meshes/rh_p12_rn_a" effort="$(arg gripper_effort_limit)" mimic_effort="$(arg gripper_mimic_effort_limit)" collision_dir="$(arg gripper_collision_dir)">
+  <xacro:rh_p12_rn_a prefix="" parent="gripper_bracket" mesh_dir="${pkg}/meshes/rh_p12_rn_a" effort="$(arg gripper_effort_limit)" mimic_effort="$(arg gripper_mimic_effort_limit)" collision_dir="${coll_dir}/rh_p12_rn_a">
     <origin xyz="0 0 ${t_adp}" rpy="0 0 0"/>
   </xacro:rh_p12_rn_a>
 
