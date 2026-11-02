@@ -119,6 +119,8 @@ Isaac Sim drive 튜닝(`data_collection_ur5_gripper/docs/drive_tuning.md` 8장)�
 
 0.15 = Isaac Sim 결과 범위의 가운데. 0.2 보다 덜 공격적.
 
+게인과 오버슈트를 왜 이렇게 다뤘는지, 직접 재 보는 방법은 [`gain_tuning.md`](gain_tuning.md) (`drive_test.py`).
+
 ---
 
 ## 5. 검증 결과 (게인 0.15)

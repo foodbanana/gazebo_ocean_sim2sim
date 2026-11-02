@@ -76,7 +76,9 @@ is not welded to the world.
 ## Arm control (ros2_control)
 
 `gz_ros2_control` with `forward_command_controller` (position) for the 6 arm joints and the gripper,
-plus `joint_state_broadcaster`. Details, tuning and test results: [`docs/ros2_control.md`](docs/ros2_control.md).
+plus `joint_state_broadcaster`. Details and test results: [`docs/ros2_control.md`](docs/ros2_control.md).
+Gain tuning and overshoot notes: [`docs/gain_tuning.md`](docs/gain_tuning.md)
+(measure with `ros2 run ocean_sim2sim_bringup drive_test.py`).
 
 ```bash
 ros2 topic pub --once /arm_controller/commands std_msgs/msg/Float64MultiArray \

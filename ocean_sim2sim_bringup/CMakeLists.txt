@@ -7,4 +7,8 @@ install(DIRECTORY
   launch
   DESTINATION share/${PROJECT_NAME})
 
+install(PROGRAMS
+  scripts/drive_test.py
+  DESTINATION lib/${PROJECT_NAME})
+
 ament_package()
