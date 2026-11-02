@@ -142,7 +142,7 @@ Isaac Sim `GripperBridge` + `GripperProfile` (실물 Dynamixel Profile Velocity 
 | `/joint_states` effort | PhysX 관절 힘 | Gazebo 관절 effort | stage1 은 effort 를 안 씀 |
 | `/joint_states` 120 Hz 스텝 | 매 물리 스텝 (120 Hz 물리) | 2 스텝마다 (240 Hz 물리). 오래 돌리면 홀수 스텝으로 한 칸 밀릴 수 있음 (7 장 시간 오차) | stamp 는 항상 실제 물리 스텝 시각 |
 | QoS 깊이 | 3 s 분량 (`/joint_states` 360) | `/gripper/*` 90, `/joint_states` 는 브로드캐스터 기본값 | 녹화 시작 직후 누락이 보이면 늘림 |
-| 빈손으로 끝까지 닫기 | 손가락끼리 닿아 약 1.121 rad 에서 멈춤 | 1.118 rad 에서 멈춤 (Isaac Sim 과 같은 convex 충돌 형상, grasp.md 1-1 장) | −0.2° |
+| 빈손으로 끝까지 닫기 | 손가락끼리 닿아 약 1.121 rad 에서 멈춤 | 1.134 rad 까지 (원본 메시에서 손가락끼리 충돌 감지 안 됨, grasp.md 1-1·5 장) | +0.7° |
 
 ---
 

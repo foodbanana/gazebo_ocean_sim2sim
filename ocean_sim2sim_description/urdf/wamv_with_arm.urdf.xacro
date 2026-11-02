@@ -27,8 +27,9 @@
        gripper_effort_limit 2.28 Nm = Isaac Sim gripper drive maxForce (real 400 mA); the mimic joints keep 1000 so they
        stay locked to rh_r1_joint (one driven joint + mimic, as in Isaac Sim). docs/grasp.md -->
   <xacro:arg name="gripper_effort_limit" default="2.28"/>
-  <!-- collision shapes as Isaac Sim collides with them (convex hulls, forearm decomposition) -->
-  <xacro:arg name="collision_meshes" default="convex"/>
+  <!-- collision shapes: original meshes. "convex" = the hulls Isaac Sim (PhysX) must use, but DART + Bullet gives one contact
+       point per convex-convex pair (deep penetration, small objects wobble), docs/grasp.md 1-1 -->
+  <xacro:arg name="collision_meshes" default="original"/>
 
   <!-- ===== arm ===== -->
   <xacro:arg name="arm_xacro" default="$(find ur5_rh_p12_description)/urdf/ur5_rh_p12_d435i.urdf.xacro"/>

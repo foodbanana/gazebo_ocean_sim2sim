@@ -180,6 +180,23 @@ class GraspTest(Node):
                 per[key] = per.get(key, 0.0) + fn
         return per if any_force else {}
 
+    def contact_points(self):
+        """Contact points per finger link in the TCP frame [mm] and depth [mm] (debug)."""
+        c = self.contacts
+        if c is None:
+            return {}
+        p_t, q_t = self.tcp_world()
+        x, y, z, w = q_t
+        out = {}
+        for ct in c.contacts:
+            other = ct.collision2.name if 'test_box' in ct.collision1.name else ct.collision1.name
+            key = next((l for l in FINGER_LINKS if l in other), other.split('::')[0])
+            for i, pos in enumerate(ct.positions):
+                r = quat_rot([-x, -y, -z, w], [pos.x - p_t[0], pos.y - p_t[1], pos.z - p_t[2]])
+                d = ct.depths[i] if i < len(ct.depths) else float('nan')
+                out.setdefault(key, []).append(tuple(round(v * 1000, 1) for v in r) + (round(d * 1000, 2),))
+        return out
+
 
 def go_home(n, sec=2.0):
     n.arm(HOME)
@@ -311,8 +328,12 @@ def test_hold(n, name, size, mass, mu, sec, top=-0.015):
     if n.debug:
         print(f'  {name} contacts [N]: ' + ('  '.join(f'{k} {v:.1f}' for k, v in sorted(forces.items())) if forces else str(forces))
               + '   fingers ' + ' '.join(f'{n.q[j]:.4f}' for j in FINGERS) + '   tau ' + ' '.join(f'{n.eff[j]:+.3f}' for j in FINGERS))
+        for k, pts in sorted(n.contact_points().items()):
+            print(f'    {k}: {len(pts)} points (x, y, z in TCP frame, depth) [mm]: {pts}')
     sl = Slip(n)
     sl.start()
+    _, q_t0 = n.tcp_world()
+    sl.q0 = quat_mul([-q_t0[0], -q_t0[1], -q_t0[2], q_t0[3]], n.box[2])   # box orientation in the TCP frame at release
     n.box_log.clear()
     qs = []
     t0 = n.now()
@@ -323,6 +344,20 @@ def test_hold(n, name, size, mass, mu, sec, top=-0.015):
     if n.debug:
         step = max(1, len(rel) // 6)
         print('  grasp point in TCP frame over time [mm]: ' + '  '.join(str([round(v * 1000, 2) for v in r]) for r in rel[::step]))
+        def rot_deg(b):   # box rotation since the anchor let go, in the current TCP frame (rotation vector) [deg]
+            _, q_t = n.tcp_world()
+            _, _, qb = b
+            x, y, z, w = quat_mul(quat_mul([-q_t[0], -q_t[1], -q_t[2], q_t[3]], qb), [-sl.q0[0], -sl.q0[1], -sl.q0[2], sl.q0[3]])
+            ang = 2 * math.atan2(math.sqrt(x * x + y * y + z * z), w)
+            s_ = math.sqrt(x * x + y * y + z * z) or 1.0
+            return [round(math.degrees(ang) * v / s_, 2) for v in (x, y, z)]
+        logs = n.box_log[::10]
+        names = ARM + FINGERS
+        print('  joint range over the hold [deg]: ' + '  '.join(
+            f'{names[k]} {math.degrees(max(s[k] for s in qs) - min(s[k] for s in qs)):.3f}' for k in range(len(names))))
+        st = max(1, len(qs) // 6)
+        print('  fingers over time [rad]: ' + '  '.join(str([round(v, 4) for v in s[len(ARM):]]) for s in qs[::st]))
+        print('  box rotation in TCP frame over time [deg]: ' + '  '.join(str(rot_deg(b)) for b in logs[::step]))
     slip = max(math.hypot(*r) for r in rel) * 1000
     jit_box = max(max(r[k] for r in rel) - min(r[k] for r in rel) for k in range(3)) * 1000
     jit_q = max(max(s[k] for s in qs) - min(s[k] for s in qs) for k in range(len(qs[0])))
