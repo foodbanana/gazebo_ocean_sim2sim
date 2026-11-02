@@ -103,7 +103,8 @@ ros2 run rqt_image_view rqt_image_view /cam/wrist/color/image_raw
 ## Drone to grasp
 
 A 0.8 kg simple quadcopter (same shapes and masses as the Isaac Sim drone) hovers world-fixed above the arm
-while the boat moves on the waves; `/sim/drone_kill` drops it ([`docs/scene.md`](docs/scene.md)).
+while the boat moves on the waves; `/sim/drone_kill` drops it, `/sim/reset` starts a new episode
+(arm to the start pose, drone at a random point of the Isaac Sim target list, seeded) ([`docs/scene.md`](docs/scene.md)).
 A PX4 SITL drone will replace it.
 
 ## Robot arm description

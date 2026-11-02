@@ -12,13 +12,16 @@ PX4 SITL 드론을 붙이기 전까지 쓰는 **임시 드론**과 에피소드 
 시작 후 보트가 자리를 잡으면 (3 s) 다시 5 s 동안 로봇 베이스 위치를 평균해서 드론을 띄운다 (sim 약 8 s).
 
 ```bash
+ros2 service call /sim/reset std_srvs/srv/Trigger          # 에피소드 리셋 (약 2.7 s)
 ros2 service call /sim/drone_kill std_srvs/srv/Trigger     # 드론 모터 정지 (잡은 뒤)
 ```
 
 | 서비스 | 동작 |
 |---|---|
+| `/sim/reset` (std_srvs/Trigger) | 에피소드 시작 상태로 (7 장). message = JSON |
 | `/sim/drone_kill` (std_srvs/Trigger) | 드론을 앵커에서 떼어 떨어뜨림 (= 모터 정지). message = JSON `{"sim_time": ...}`. 이미 떨어져 있으면 `success=False` |
-| `/sim/reset` | 5-2 단계에서 추가 |
+
+처음 드론이 뜨기 전 (sim 약 8 s) 에는 두 서비스 모두 `success=False` (`scene not ready yet`).
 
 ## 2. 드론 모델 (`ocean_sim2sim_gazebo/models/simple_drone`)
 
@@ -67,7 +70,59 @@ world 위치 = (평균 베이스 위치) + Rz(평균 베이스 yaw) · `drone_po
 | kill | 떨어져 상판 위로 (z 1.26) |
 | 손목 영상 (`under_drone` 자세) | 드론 몸체·팔·모터가 가운데, 프로펠러 끝이 위에서 잘림 (Isaac Sim 기록과 같음). 몸체 중심 평균 (340, 218), 파도로 ±15 px. 영상 중심 (332, 239) 과 약 20 px (1.4 cm) 차이 = 보트의 기본 피치 0.6° 로 팔 전체가 기울어서 |
 
-## 6. 알아 둘 것
+## 6. 리셋 `/sim/reset`
+
+Isaac Sim `sim_reset.EpisodeReset` 과 같은 순서. 한 번에 sim 약 2.7 s (Isaac Sim 은 PX4 재이륙까지 약 24 s).
+
+1. 인터페이스 hold (`/ocean_sim2sim/hold`, std_srvs/SetBool): `/joint_command`·`/gripper/command` 는 검사만 하고 무시
+2. 드론과 앵커를 지움 (잡고 있던 드론도). **먼저 떼고 `detached` 를 확인한 뒤** 지운다 (7 장)
+3. 팔을 `init_pose` 로, 그리퍼를 열림으로 — `reset_arm_time` (2 s) 동안 부드럽게
+   (Isaac Sim 은 순간이동. Gazebo 는 ROS 에서 관절을 순간이동시키는 방법이 없고, 컨트롤러 목표도 같이 바꿔야 해서)
+4. 새 호버 위치 = 목록 점 + 축마다 균등분포 ±`drone_offset` (3 cm)
+   - `use_drone_targets: true` (기본): `drone_targets_base` 25 점 (Isaac Sim `drone_targets_base`) 을 섞어 **한 바퀴씩** 고른다
+   - `false`: `drone_pos_base` ± 오프셋
+   - 섞는 순서 = `seed` 와 바퀴 번호, 오프셋 = `seed` + 리셋 번호 → **같은 seed = 같은 순서·위치** (`seed: -1` 이면 시작 시각)
+5. 그 위치 (평균 로봇 베이스 기준, 4 장) 에 앵커 + 드론 생성, `attached` 확인
+6. hold 해제, 그리퍼 목표 = 열림 (0)
+
+실패하면 `success=False` + 이유, hold 는 켜진 채 (다음 리셋이 성공할 때까지 명령 무시, Isaac Sim 과 같음).
+
+| `ocean_sim2sim_scene` 파라미터 | 기본값 |
+|---|---|
+| `init_pose` | Isaac Sim `under_drone` [−0.1889, −1.0776, 1.7304, −2.2242, 1.5700, −2.9566] |
+| `reset_arm_time` | 2.0 s |
+| `seed` | −1 (시작 시각) |
+| `drone_offset` | 0.03 m |
+| `use_drone_targets` | true |
+| `drone_target_names`, `drone_targets_base` | 25 점 (이름 = base cm, 예 `x45_y-20_z70`) |
+
+응답 예 (JSON):
+
+```json
+{"reset_count": 1, "seed": 7, "offset_seed": 7, "drone_target": "x45_y+00_z70",
+ "drone_target_base": [0.45, 0.0, 0.7], "drone_offset": [-0.01057, -0.02095, 0.00906],
+ "drone_pos_base": [0.43943, -0.02095, 0.70906], "drone_world": [0.43394, -0.02151, 1.89231], "drone_yaw": 0.0,
+ "mean_robot_base": [...], "init_pose": [...], "drone_attached": true,
+ "phases": {"remove_drone": 0.4, "arm_to_start": 2.308, "spawn_drone": 0.008},
+ "sim_time": ..., "sim_s": 2.72, "wall_s": 2.757}
+```
+
+### 확인
+
+| 항목 | 결과 |
+|---|---|
+| 리셋 3 번 | 모두 성공, 각 약 2.6~2.8 s. 팔 \|q − init_pose\| 0.000°, 그리퍼 열림, `/gripper/target` 0 |
+| 리셋 중 명령 | 다른 자세·그리퍼 닫기를 60 Hz 로 보내도 무시 (리셋 뒤 0.000°, 목표 0) |
+| kill 뒤 리셋 | 떨어진 드론을 지우고 새 위치에 다시 띄움 |
+| 리셋 뒤 명령 | 다시 적용 (wrist_3 +0.100 rad) |
+| 같은 seed (7) 로 3 번 실행 | 목표 점·오프셋 순서가 모두 같음 (x45_y+00_z70 → x55_y+20_z70 → x45_y−20_z80) |
+
+## 7. 알아 둘 것
+
+- **DetachableJoint 가 붙어 있는 드론을 지우면 Gazebo 가 죽는다** (segfault, DART `WeldJointConstraint::update` 가 지워진 몸체를 참조).
+  떼라는 메시지를 보내고 `/drone/state` 가 `detached` 가 된 것을 확인한 뒤 지운다
+- **앵커는 옮기지 않고 지웠다가 다시 만든다**: world 에 fixed joint 로 묶인 모델이라 위치 이동 서비스로 옮겨지지 않을 가능성이 커서
+- **처음 드론을 띄우는 동안 리셋을 받으면 둘이 겹친다** → 처음 생성이 끝나 `attached` 를 확인한 뒤부터 리셋을 받는다
 
 - **`DetachableJoint` 는 `<static>` 모델에 붙지 않는다** (드론이 고정되지 않고 흔들림). VRX 의 정박 플랫폼처럼 world 에 fixed joint 로 고정한 일반 모델을 쓴다
 - **ros_gz_bridge 의 `Pose_V` → `TFMessage` 변환은 엔티티 이름을 버린다** (`child_frame_id` 가 빈 문자열) → 보트 위치는 `OdometryPublisher` 로 받는다

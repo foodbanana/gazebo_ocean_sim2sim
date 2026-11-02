@@ -11,10 +11,23 @@
     to where the base is on average, not where a wave happened to put it (one instant was 3 cm too high).
   - /sim/drone_kill (std_srvs/Trigger): "motors off" = detach from the anchor, the drone falls
     (onto the gripper if it is held). Response message = JSON. Already off -> success False.
+  - /sim/reset (std_srvs/Trigger): back to the episode start (Isaac Sim sim_reset.EpisodeReset):
+      1. interface hold on (commands are checked but ignored)
+      2. remove the drone and its anchor (also a drone held in the gripper)
+      3. arm to init_pose and gripper open, smoothly in reset_arm_time (Gazebo has no joint teleport from ROS)
+      4. new hover position: next point of drone_targets_base (shuffled, one full round at a time)
+         + uniform +-drone_offset per axis, from seed + reset count (same seed = same sequence);
+         use_drone_targets false -> drone_pos_base + offset
+      5. spawn anchor + drone there (mean robot base, as at the start), wait for "attached"
+      6. hold off (gripper goal = open)
+    Response message = JSON (seed, target, offsets, positions, sim seconds per phase, wall time).
+    On failure success False and the hold stays on (commands ignored) until a reset succeeds.
 """
 import json
 import math
 import os
+import random
+import time
 from collections import deque
 import xml.etree.ElementTree as ET
 
@@ -25,9 +38,12 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from ros_gz_interfaces.srv import SpawnEntity
+from builtin_interfaces.msg import Duration
+from ros_gz_interfaces.msg import Entity
+from ros_gz_interfaces.srv import DeleteEntity, SpawnEntity
 from std_msgs.msg import Empty, String
-from std_srvs.srv import Trigger
+from std_srvs.srv import SetBool, Trigger
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from nav_msgs.msg import Odometry
 
 # Anchor = a non-static model welded to the world (as VRX's dock "platform"). The DetachableJoint does not
@@ -99,6 +115,26 @@ class SceneNode(Node):
         self.drone_sdf_path = str(p('drone_sdf', default_sdf).value)
         with open(self.drone_sdf_path) as f:
             self.drone_sdf = f.read()
+        # reset
+        self.arm_joints = list(p('arm_joints', rclpy.Parameter.Type.STRING_ARRAY).value)
+        self.init_pose = [float(v) for v in p('init_pose', rclpy.Parameter.Type.DOUBLE_ARRAY).value]
+        if len(self.init_pose) != len(self.arm_joints):
+            raise RuntimeError(f'init_pose has {len(self.init_pose)} values for {len(self.arm_joints)} arm joints')
+        self.gripper_joint = str(p('gripper_joint', 'rh_r1_joint').value)
+        self.reset_arm_time = float(p('reset_arm_time', 2.0).value)
+        self.use_targets = bool(p('use_drone_targets', True).value)
+        flat = [float(v) for v in p('drone_targets_base', rclpy.Parameter.Type.DOUBLE_ARRAY).value]
+        names = list(p('drone_target_names', rclpy.Parameter.Type.STRING_ARRAY).value)
+        if len(flat) != 3 * len(names) or not names:
+            raise RuntimeError(f'drone_targets_base needs 3 values per name: {len(flat)} values, {len(names)} names')
+        self.targets = [(n, flat[3 * i:3 * i + 3]) for i, n in enumerate(names)]
+        self.drone_offset = float(p('drone_offset', 0.03).value)
+        seed = int(p('seed', -1).value)
+        self.seed = seed if seed >= 0 else int(time.time())   # -1: start time (different every session, as Isaac Sim)
+        self.reset_count = 0
+        self.order = []               # target indices left in this round
+        self.round = 0
+        self.busy = False
 
         self.cb = ReentrantCallbackGroup()
         self.base_hist = deque(maxlen=5000)   # (sim t, robot base position, base yaw) from the boat odometry
@@ -114,7 +150,15 @@ class SceneNode(Node):
         self.pub_detach = self.create_publisher(Empty, '/drone/detach', 10)
         self.pub_attach = self.create_publisher(Empty, '/drone/attach', 10)
         self.spawn_cli = self.create_client(SpawnEntity, f'/world/{self.world}/create', callback_group=self.cb)
+        self.delete_cli = self.create_client(DeleteEntity, f'/world/{self.world}/remove', callback_group=self.cb)
+        self.hold_cli = self.create_client(SetBool, '/ocean_sim2sim/hold', callback_group=self.cb)
+        self.pub_arm = self.create_publisher(JointTrajectory, '/arm_controller/joint_trajectory', 10)
+        self.pub_grip = self.create_publisher(JointTrajectory, '/gripper_controller/joint_trajectory', 10)
         self.create_service(Trigger, '/sim/drone_kill', self._on_kill, callback_group=self.cb)
+        self.create_service(Trigger, '/sim/reset', self._on_reset, callback_group=self.cb)
+        self.get_logger().info(f'seed {self.seed}, {len(self.targets)} drone targets'
+                               + ('' if self.use_targets else ' (not used: drone_pos_base)')
+                               + f', offset +-{self.drone_offset} m, init_pose {self.init_pose}')
         self.timer = self.create_timer(0.5, self._spawn_when_ready, callback_group=self.cb)
 
     # ---------------------------------------------------------------- inputs
@@ -174,15 +218,132 @@ class SceneNode(Node):
         # let the boat settle, then average the base over base_average seconds
         if now - self.start_time < self.spawn_delay + self.base_average or not self.spawn_cli.service_is_ready():
             return
-        self.spawned = True
+        if self.busy:
+            return
+        self.busy = True                  # a /sim/reset now would race with this spawn: it answers "not ready"
         self.timer.cancel()
-        pos, yaw, base = self.drone_world_pose(self.drone_pos_base)
-        self._spawn('drone_anchor', ANCHOR_SDF, pos, yaw)
-        self._spawn('simple_drone', self.drone_sdf, pos, yaw)
+        try:
+            pos, yaw, base = self.drone_world_pose(self.drone_pos_base)
+            self._spawn('drone_anchor', ANCHOR_SDF, pos, yaw)
+            self._spawn('simple_drone', self.drone_sdf, pos, yaw)
+            self.wait_sim(2.0, until=lambda: self.attached is True)
+            self.spawned = True           # only now: /sim/reset and /sim/drone_kill are accepted
+        finally:
+            self.busy = False
         self.get_logger().info(
             f'drone at world ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}) yaw {math.degrees(yaw):.1f} deg = '
             f'mean robot base over {self.base_average:g} s ({base[0]:.3f}, {base[1]:.3f}, {base[2]:.3f}) '
             f'+ {self.drone_pos_base} (base frame, level)')
+
+    # ---------------------------------------------------------------- reset
+    def now(self):
+        return self.get_clock().now().nanoseconds * 1e-9
+
+    def wait_sim(self, sec, until=None):
+        """Wait sec sim seconds (or until until() is true). Returns True if until() became true."""
+        t0 = self.now()
+        while rclpy.ok() and self.now() - t0 < sec:
+            if until is not None and until():
+                return True
+            time.sleep(0.005)
+        return until is not None and until()
+
+    def _hold(self, on):
+        if not self.hold_cli.wait_for_service(timeout_sec=5.0):
+            raise RuntimeError('/ocean_sim2sim/hold not available (interface node)')
+        if not self.hold_cli.call(SetBool.Request(data=on)).success:
+            raise RuntimeError(f'interface hold {on} failed')
+
+    def _delete(self, name):
+        req = DeleteEntity.Request()
+        req.entity.name = name
+        req.entity.type = Entity.MODEL
+        return self.delete_cli.call(req).success     # False if it does not exist
+
+    def _move_joints(self, pub, joints, q, sec):
+        traj = JointTrajectory()          # stamp 0 = start now, from the current desired state
+        traj.joint_names = joints
+        s = int(sec)
+        traj.points = [JointTrajectoryPoint(positions=[float(v) for v in q],
+                                            time_from_start=Duration(sec=s, nanosec=int((sec - s) * 1e9)))]
+        pub.publish(traj)
+
+    def next_target(self, k):
+        """Drone position (base frame) for reset number k: (name, target, offset)."""
+        if self.use_targets:
+            if not self.order:
+                self.order = list(range(len(self.targets)))
+                random.Random(self.seed * 1000 + self.round).shuffle(self.order)
+                self.round += 1
+            name, target = self.targets[self.order.pop(0)]
+        else:
+            name, target = 'drone_pos_base', list(self.drone_pos_base)
+        rng = random.Random(self.seed + k)
+        offset = [rng.uniform(-self.drone_offset, self.drone_offset) for _ in range(3)]
+        return name, target, offset
+
+    def _on_reset(self, req, res):
+        if self.busy or not self.spawned:
+            res.success = False
+            res.message = json.dumps({'error': 'scene not ready yet (drone not spawned)' if not self.spawned
+                                      else 'reset already running'})
+            return res
+        self.busy = True
+        t0, w0 = self.now(), time.time()
+        phases, t = {}, t0
+        k = self.reset_count
+        try:
+            self._hold(True)
+            # 2. remove the drone (and anchor). Detach FIRST and wait until Gazebo has done it: removing the
+            #    drone while its DetachableJoint still holds it crashed Gazebo (DART WeldJointConstraint on a
+            #    deleted body, segfault).
+            if self.attached is not False:
+                self.pub_detach.publish(Empty())
+                if not self.wait_sim(2.0, until=lambda: self.attached is False):
+                    raise RuntimeError('drone did not report "detached" within 2 s')
+            self.wait_sim(0.05)
+            self._delete('simple_drone')
+            self.wait_sim(0.05)
+            self._delete('drone_anchor')
+            self.wait_sim(0.05)
+            self.attached = None
+            phases['remove_drone'], t = self.now() - t, self.now()
+            # 3. arm to the start pose, gripper open
+            self._move_joints(self.pub_arm, self.arm_joints, self.init_pose, self.reset_arm_time)
+            self._move_joints(self.pub_grip, [self.gripper_joint], [0.0], self.reset_arm_time)
+            self.wait_sim(self.reset_arm_time + 0.3)
+            phases['arm_to_start'], t = self.now() - t, self.now()
+            # 4. new hover position, 5. spawn
+            name, target, offset = self.next_target(k)
+            pos_base = [a + b for a, b in zip(target, offset)]
+            pos, yaw, base = self.drone_world_pose(pos_base)
+            self._spawn('drone_anchor', ANCHOR_SDF, pos, yaw)
+            self._spawn('simple_drone', self.drone_sdf, pos, yaw)
+            attached = self.wait_sim(2.0, until=lambda: self.attached is True)
+            phases['spawn_drone'], t = self.now() - t, self.now()
+            # 6. commands again
+            self._hold(False)
+            self.reset_count += 1
+            info = {'reset_count': self.reset_count, 'seed': self.seed, 'offset_seed': self.seed + k,
+                    'drone_target': name, 'drone_target_base': target,
+                    'drone_offset': [round(v, 5) for v in offset],
+                    'drone_pos_base': [round(v, 5) for v in pos_base],
+                    'drone_world': [round(v, 5) for v in pos], 'drone_yaw': round(yaw, 5),
+                    'mean_robot_base': [round(v, 5) for v in base],
+                    'init_pose': self.init_pose, 'drone_attached': attached,
+                    'phases': {k2: round(v, 3) for k2, v in phases.items()},
+                    'sim_time': round(self.now(), 4), 'sim_s': round(self.now() - t0, 3), 'wall_s': round(time.time() - w0, 3)}
+            res.success = True
+            res.message = json.dumps(info)
+            self.get_logger().info(f'reset {self.reset_count}: drone {name} + {info["drone_offset"]} -> '
+                                   f'base {info["drone_pos_base"]}, {info["sim_s"]} s sim')
+        except Exception as e:  # noqa: BLE001  report, keep the hold on (no commands until a reset succeeds)
+            res.success = False
+            res.message = json.dumps({'error': str(e), 'phases': phases})
+            self.get_logger().error(f'reset failed: {e}')
+        finally:
+            self.busy = False
+        return res
 
     def _on_kill(self, req, res):
         t = self.get_clock().now().nanoseconds * 1e-9
@@ -191,7 +352,7 @@ class SceneNode(Node):
             res.message = json.dumps({'sim_time': t, 'error': 'drone is not held (not spawned or already off)'})
             return res
         self.pub_detach.publish(Empty())
-        self.attached = False
+        self.wait_sim(1.0, until=lambda: self.attached is False)
         res.success = True
         res.message = json.dumps({'sim_time': t})
         self.get_logger().info(f'drone motors off at sim time {t:.3f} s')

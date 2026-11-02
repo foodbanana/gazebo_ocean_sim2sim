@@ -10,7 +10,7 @@
 #   4. controller spawner: joint_state_broadcaster, arm_state_broadcaster, arm_controller, gripper_controller
 #   5. ocean_sim2sim_interface: Isaac Sim / real-robot topics (/joint_command, /gripper/*).
 #   6. ros_gz_bridge for the arm sensors (wrist camera -> /cam/wrist/color/*).
-#   7. scene_node (drone to grasp, /sim/drone_kill) + its Gazebo bridges.
+#   7. scene_node (drone to grasp, /sim/drone_kill, /sim/reset) + its Gazebo bridges.
 #      It exits on an invalid command -> the whole launch shuts down (no silent fallback).
 
 import os
@@ -95,7 +95,7 @@ def launch(context, *args, **kwargs):
         output='screen',
         parameters=[{'config_file': arg('bridge_config'), 'use_sim_time': True}])
 
-    # 7. episode scene: drone + /sim/* services
+    # 7. episode scene: drone + /sim/drone_kill, /sim/reset
     world = os.path.basename(os.path.splitext(arg('world'))[0])
     scene_bridge = Node(
         package='ros_gz_bridge',
@@ -103,7 +103,7 @@ def launch(context, *args, **kwargs):
         name='scene_bridge',
         output='screen',
         arguments=[f'/world/{world}/create@ros_gz_interfaces/srv/SpawnEntity',
-                   f'/world/{world}/set_pose@ros_gz_interfaces/srv/SetEntityPose',
+                   f'/world/{world}/remove@ros_gz_interfaces/srv/DeleteEntity',
                    '/model/wamv/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
                    '/drone/detach@std_msgs/msg/Empty]gz.msgs.Empty',
                    '/drone/attach@std_msgs/msg/Empty]gz.msgs.Empty',

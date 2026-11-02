@@ -45,3 +45,42 @@ ocean_sim2sim_scene:
     spawn_delay: 3.0                   # [s sim] wait for the boat to settle after start
     base_average: 5.0                  # [s sim] average the robot base pose over this (about one wave period, 5 s)
                                        #   before placing the drone: the drone is world-fixed, the boat moves
+
+    # /sim/reset (Isaac Sim sim_reset + scene_drone.yaml)
+    arm_joints: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint]
+    init_pose: [-0.1889, -1.0776, 1.7304, -2.2242, 1.5700, -2.9566]   # Isaac Sim init_poses.under_drone [rad]
+    gripper_joint: rh_r1_joint
+    reset_arm_time: 2.0                # [s sim] arm to init_pose, gripper open (smooth: no joint teleport from ROS)
+    seed: -1                           # -1 = start time (different every session). Same seed = same drone sequence
+    drone_offset: 0.03                 # [m] uniform +- per axis around the chosen point (Isaac Sim reset.drone_offset)
+    use_drone_targets: true            # true: points below, shuffled, one round at a time (Isaac Sim --drone-targets)
+                                       # false: drone_pos_base
+    # Isaac Sim drone_targets_base (robot base frame [m]): name = base cm, e.g. x45_y-20_z70 = (0.45, -0.20, 0.70)
+    drone_target_names: [x45_y-20_z70, x45_y-10_z70, x45_y+00_z70, x45_y+10_z70, x45_y+20_z70, x55_y-20_z70, x55_y-10_z70, x55_y+00_z70, x55_y+10_z70, x55_y+20_z70, x65_y-20_z70, x65_y-10_z70, x65_y+00_z70, x65_y+10_z70, x65_y+20_z70, x45_y-20_z80, x45_y-10_z80, x45_y+00_z80, x45_y+10_z80, x45_y+20_z80, x55_y-20_z80, x55_y-10_z80, x55_y+00_z80, x55_y+10_z80, x55_y+20_z80]
+    drone_targets_base: [
+      0.45, -0.20, 0.70,   # x45_y-20_z70
+      0.45, -0.10, 0.70,   # x45_y-10_z70
+      0.45, 0.00, 0.70,   # x45_y+00_z70
+      0.45, 0.10, 0.70,   # x45_y+10_z70
+      0.45, 0.20, 0.70,   # x45_y+20_z70
+      0.55, -0.20, 0.70,   # x55_y-20_z70
+      0.55, -0.10, 0.70,   # x55_y-10_z70
+      0.55, 0.00, 0.70,   # x55_y+00_z70
+      0.55, 0.10, 0.70,   # x55_y+10_z70
+      0.55, 0.20, 0.70,   # x55_y+20_z70
+      0.65, -0.20, 0.70,   # x65_y-20_z70
+      0.65, -0.10, 0.70,   # x65_y-10_z70
+      0.65, 0.00, 0.70,   # x65_y+00_z70
+      0.65, 0.10, 0.70,   # x65_y+10_z70
+      0.65, 0.20, 0.70,   # x65_y+20_z70
+      0.45, -0.20, 0.80,   # x45_y-20_z80
+      0.45, -0.10, 0.80,   # x45_y-10_z80
+      0.45, 0.00, 0.80,   # x45_y+00_z80
+      0.45, 0.10, 0.80,   # x45_y+10_z80
+      0.45, 0.20, 0.80,   # x45_y+20_z80
+      0.55, -0.20, 0.80,   # x55_y-20_z80
+      0.55, -0.10, 0.80,   # x55_y-10_z80
+      0.55, 0.00, 0.80,   # x55_y+00_z80
+      0.55, 0.10, 0.80,   # x55_y+10_z80
+      0.55, 0.20, 0.80,   # x55_y+20_z80
+    ]

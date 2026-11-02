@@ -32,6 +32,10 @@ Loop ticks:
   loop_tick_topic empty (no camera): every physics_hz / loop_hz physics steps (240 / 30 = 8). Counted in
     steps, not by sim time: Gazebo keeps time in integer ns (1/240 s -> 4166666 ns) and drifts off 1/30 s.
 
+Hold (/ocean_sim2sim/hold, std_srvs/SetBool, used by scene_node during /sim/reset = Isaac Sim bridge.hold):
+  true  -> commands are still checked but not applied (kept commands are dropped)
+  false -> commands are applied again; the gripper goal is open (0), as the reset left the gripper open.
+
 /joint_states (arm only, 120 Hz) is published by arm_state_broadcaster, /clock by the VRX bridge.
 """
 import math
@@ -45,6 +49,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CameraInfo, JointState
 from std_msgs.msg import Float64, String
+from std_srvs.srv import SetBool
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 
@@ -99,6 +104,8 @@ class InterfaceNode(Node):
         self.grip_hist = deque(maxlen=int(2 * self.physics_hz))   # (stamp ns, rh_r1 [rad]), last 2 s
         self.pending_arm = None       # last checked /joint_command waiting for the next loop
         self.pending_grip = None      # last checked /gripper/command raw waiting for the next loop
+        self.hold = False             # True during /sim/reset: commands are checked but ignored
+        self.n_ignored = 0
 
         reliable = lambda depth: QoSProfile(depth=depth, reliability=ReliabilityPolicy.RELIABLE)  # noqa: E731
         grip_depth = max(10, int(queue_sec * self.loop_hz))
@@ -112,6 +119,7 @@ class InterfaceNode(Node):
         self.create_subscription(JointState, topic('state_topic', '/joint_state_broadcaster/joint_states'), self._on_state, 100)
         self.create_subscription(JointState, topic('arm.joint_command_topic', '/joint_command'), self._guard(self._on_arm_command), 10)
         self.create_subscription(Float64, topic('gripper.command_topic', '/gripper/command'), self._guard(self._on_gripper_command), 10)
+        self.create_service(SetBool, '/ocean_sim2sim/hold', self._on_hold)
         if self.loop_tick_topic:
             self.create_subscription(CameraInfo, self.loop_tick_topic, lambda m: self._tick(m.header.stamp), reliable(10))
         self.get_logger().info(
@@ -183,6 +191,15 @@ class InterfaceNode(Node):
                 v, self.pending_grip = self.pending_grip, None
                 self._apply_gripper(v)
 
+    def _on_hold(self, req, res):
+        self.hold = bool(req.data)
+        self.pending_arm = self.pending_grip = None
+        if not self.hold:
+            self.goal_raw = self.goal_rad = 0.0          # the reset opened the gripper
+        res.success = True
+        res.message = f'hold {self.hold}, ignored commands so far {self.n_ignored}'
+        return res
+
     def _on_arm_command(self, msg):
         names, pos = list(msg.name), list(msg.position)
         if len(names) != len(pos):
@@ -199,7 +216,9 @@ class InterfaceNode(Node):
                for n, v in zip(self.arm_joints, q) if not self.limits[n][0] <= v <= self.limits[n][1]]
         if out:
             raise CommandError('/joint_command outside the joint limits: ' + ', '.join(out))
-        if self.commands_on_loop:
+        if self.hold:
+            self.n_ignored += 1               # reset in progress: checked but not applied
+        elif self.commands_on_loop:
             self.pending_arm = q              # only the last command of a loop takes effect
         else:
             self._apply_arm(q)
@@ -216,7 +235,9 @@ class InterfaceNode(Node):
             raise CommandError(f'/gripper/command must be 0 ~ {self.raw_max:g} (raw): {v}')
         if self.grip_joint not in self.q:
             raise CommandError(f'/gripper/command before the first state of {self.grip_joint}')
-        if self.commands_on_loop:
+        if self.hold:
+            self.n_ignored += 1
+        elif self.commands_on_loop:
             self.pending_grip = v
         else:
             self._apply_gripper(v)
