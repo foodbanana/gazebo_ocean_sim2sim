@@ -9,6 +9,7 @@
 #   3. robot_state_publisher (gz_ros2_control reads robot_description from it)
 #   4. controller spawner: joint_state_broadcaster, arm_state_broadcaster, arm_controller, gripper_controller
 #   5. ocean_sim2sim_interface: Isaac Sim / real-robot topics (/joint_command, /gripper/*).
+#   6. ros_gz_bridge for the arm sensors (wrist camera -> /cam/wrist/color/*).
 #      It exits on an invalid command -> the whole launch shuts down (no silent fallback).
 
 import os
@@ -85,7 +86,15 @@ def launch(context, *args, **kwargs):
             os.remove(urdf_path)
     cleanup = RegisterEventHandler(OnShutdown(on_shutdown=[OpaqueFunction(function=remove_urdf)]))
 
-    return [cleanup, sim, rsp, spawner, interface, stop_on_interface_exit]
+    # 6. arm sensors (cameras) Gazebo -> ROS
+    sensor_bridge = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='arm_sensor_bridge',
+        output='screen',
+        parameters=[{'config_file': arg('bridge_config'), 'use_sim_time': True}])
+
+    return [cleanup, sim, rsp, spawner, interface, stop_on_interface_exit, sensor_bridge]
 
 
 def generate_launch_description():
@@ -96,6 +105,9 @@ def generate_launch_description():
     args = [
         ('world', 'empty_ocean', 'Gazebo world name'),
         ('interface_config', default_iface, 'ocean_sim2sim_interface parameters (arm joints, gripper)'),
+        ('bridge_config',
+         os.path.join(get_package_share_directory('ur5_rh_p12_description'), 'config', 'gz_bridge.yaml'),
+         'ros_gz_bridge config for the arm sensors'),
         ('xacro_file', default_xacro, 'Boat + arm description'),
         ('xacro_args', '', 'Extra xacro args, e.g. "arm_mount_rpy:=\'0 0 1.57\'"'),
         ('headless', 'False', 'True to run without GUI'),

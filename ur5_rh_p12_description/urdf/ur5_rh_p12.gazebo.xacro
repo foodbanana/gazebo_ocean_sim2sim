@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<!--
+  Gazebo sensors of the UR5 + RH-P12-RN arm: wrist D435i color camera.
+
+  Same as the Isaac Sim wrist camera (data_collection_ur5_gripper isaacsim/config/wrist_camera.yaml,
+  real D435i camera_info 640x480, 2026-09-30):
+    640 x 480 rgb8, 30 Hz, fx = fy = 618.5508 (Isaac Sim renders square pixels: fy = fx, real fy 618.956),
+    cx 332.2763, cy 239.3807, no distortion, clip 0.01 ~ 10 m,
+    topics /cam/wrist/color/image_raw and /cam/wrist/color/camera_info,
+    frame_id wrist_camera_color_optical_frame.
+
+  The sensor is attached to wrist_camera_color_frame (x forward, z up = Gazebo camera convention);
+  wrist_camera_color_optical_frame (z forward) is the same point rotated, used as the image frame_id.
+  horizontal_fov = 2 atan(320 / fx) = 0.9548 rad (the intrinsics below override the projection).
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="wrist_camera_update_rate" default="30"/>
+
+  <gazebo reference="wrist_camera_color_frame">
+    <sensor name="wrist_camera_color" type="camera">
+      <always_on>true</always_on>
+      <update_rate>$(arg wrist_camera_update_rate)</update_rate>
+      <visualize>false</visualize>
+      <topic>/cam/wrist/color/image_raw</topic>
+      <gz_frame_id>wrist_camera_color_optical_frame</gz_frame_id>
+      <camera name="wrist_camera_color">
+        <camera_info_topic>/cam/wrist/color/camera_info</camera_info_topic>
+        <horizontal_fov>0.9548</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.01</near>
+          <far>10.0</far>
+        </clip>
+        <lens>
+          <!-- pinhole (the SDF default type is stereographic) -->
+          <type>gnomonical</type>
+          <scale_to_hfov>false</scale_to_hfov>
+          <intrinsics>
+            <fx>618.5508422851562</fx>
+            <fy>618.5508422851562</fy>
+            <cx>332.2762756347656</cx>
+            <cy>239.38070678710938</cy>
+            <s>0</s>
+          </intrinsics>
+        </lens>
+      </camera>
+    </sensor>
+  </gazebo>
+
+</robot>

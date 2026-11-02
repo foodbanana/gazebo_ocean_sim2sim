@@ -1,0 +1,17 @@
+# ros_gz_bridge config for the UR5 + RH-P12-RN sensors (ur5_rh_p12.gazebo.xacro).
+# Topic names = Isaac Sim / real robot. publisher_queue 90 = 3 s at 30 Hz (Isaac Sim publish_queue_sec).
+- ros_topic_name: /cam/wrist/color/image_raw
+  gz_topic_name: /cam/wrist/color/image_raw
+  ros_type_name: sensor_msgs/msg/Image
+  gz_type_name: gz.msgs.Image
+  direction: GZ_TO_ROS
+  publisher_queue: 90
+  lazy: false
+
+- ros_topic_name: /cam/wrist/color/camera_info
+  gz_topic_name: /cam/wrist/color/camera_info
+  ros_type_name: sensor_msgs/msg/CameraInfo
+  gz_type_name: gz.msgs.CameraInfo
+  direction: GZ_TO_ROS
+  publisher_queue: 90
+  lazy: false

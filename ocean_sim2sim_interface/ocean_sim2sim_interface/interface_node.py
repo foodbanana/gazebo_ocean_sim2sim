@@ -18,27 +18,32 @@ so a policy or teleop node cannot tell Isaac Sim, Gazebo and the real robot apar
                     stop on each other at about 1.121 rad, so 0.001 rad below the limit changes nothing.
   /gripper/joint_states, /gripper/target  sensor_msgs/JointState, name [gripper.name], position = raw.
                     present = rh_r1 [rad] * raw_max / upper (clamped), target = last goal raw.
-                    Published every physics_hz / publish_hz physics steps (240 / 30 = every 8th step), with
-                    the stamp of that step. Counted in steps, not by sim time: Gazebo keeps time in integer
-                    nanoseconds (1/240 s -> 4166666 ns), so sim time drifts off the exact 1/30 s grid.
+                    Published once per loop tick with the tick stamp (below).
 
-Command timing (command_loop_hz, default 30 = Isaac Sim): Isaac Sim handles ROS commands once per app
-(render) loop, 30 Hz, so a command waits up to 33 ms and only the last command of a loop takes effect
-(a 60 Hz command stream is applied at 30 Hz). With command_loop_hz > 0 commands are checked on arrival,
-kept, and applied on every physics step that is a multiple of physics_hz / command_loop_hz (240 / 30 = 8),
-after the gripper states of that step are published (same order as Isaac Sim). 0 = apply on arrival.
+Loop (= Isaac Sim app loop, one render per loop, 30 Hz). On every loop tick T:
+  1. /gripper/joint_states and /gripper/target with stamp T (finger position at T)
+  2. if commands_on_loop: apply the last /joint_command and /gripper/command received since the last tick
+     (Isaac Sim handles ROS commands once per loop: a command waits up to one loop and only the last one
+     of a loop takes effect, a 60 Hz command stream is applied at 30 Hz). false = apply on arrival.
+Loop ticks:
+  loop_tick_topic set (camera_info of the wrist camera): every camera frame -> camera images and gripper
+    states have the same stamps, as in Isaac Sim. Gazebo schedules camera frames on its own (frames come
+    every 8 or sometimes 7 physics steps, about 30.3 Hz for update_rate 30), so the loop follows the camera.
+  loop_tick_topic empty (no camera): every physics_hz / loop_hz physics steps (240 / 30 = 8). Counted in
+    steps, not by sim time: Gazebo keeps time in integer ns (1/240 s -> 4166666 ns) and drifts off 1/30 s.
 
 /joint_states (arm only, 120 Hz) is published by arm_state_broadcaster, /clock by the VRX bridge.
 """
 import math
 import xml.etree.ElementTree as ET
+from collections import deque
 
 import rclpy
 from builtin_interfaces.msg import Duration
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import CameraInfo, JointState
 from std_msgs.msg import Float64, String
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
@@ -65,28 +70,21 @@ class InterfaceNode(Node):
         self.raw_max = float(p('gripper.raw_max', 0.0).value)
         self.upper = float(p('gripper.upper', 0.0).value)
         self.profile_velocity = float(p('gripper.profile_velocity', 0.0).value)
-        self.publish_hz = float(p('gripper.publish_hz', 0.0).value)
         self.command_margin = float(p('gripper.command_margin', 0.0).value)
         self.physics_hz = float(p('physics_hz', 0.0).value)
-        self.command_loop_hz = float(p('command_loop_hz', 0.0).value)
+        self.loop_hz = float(p('loop_hz', 0.0).value)
+        self.loop_tick_topic = str(p('loop_tick_topic', '').value)
+        self.commands_on_loop = bool(p('commands_on_loop', True).value)
         queue_sec = float(p('publish_queue_sec', 3.0).value)
         for name, v in (('arm.command_interp_time', self.interp_time), ('gripper.raw_max', self.raw_max),
                         ('gripper.upper', self.upper), ('gripper.profile_velocity', self.profile_velocity),
-                        ('gripper.publish_hz', self.publish_hz), ('physics_hz', self.physics_hz)):
+                        ('loop_hz', self.loop_hz), ('physics_hz', self.physics_hz)):
             if not v > 0:
                 raise CommandError(f'parameter {name} must be > 0: {v}')
-        self.every = self.physics_hz / self.publish_hz
+        self.every = self.physics_hz / self.loop_hz      # loop period in physics steps (no camera)
         if abs(self.every - round(self.every)) > 1e-9:
-            raise CommandError(f'physics_hz {self.physics_hz} is not a multiple of gripper.publish_hz {self.publish_hz}')
+            raise CommandError(f'physics_hz {self.physics_hz} is not a multiple of loop_hz {self.loop_hz}')
         self.every = int(round(self.every))
-        self.loop_every = 0                       # 0 = apply commands on arrival
-        if self.command_loop_hz < 0:
-            raise CommandError(f'command_loop_hz must be >= 0: {self.command_loop_hz}')
-        if self.command_loop_hz > 0:
-            r = self.physics_hz / self.command_loop_hz
-            if abs(r - round(r)) > 1e-9:
-                raise CommandError(f'physics_hz {self.physics_hz} is not a multiple of command_loop_hz {self.command_loop_hz}')
-            self.loop_every = int(round(r))
         if not 0.0 <= self.command_margin < self.upper:
             raise CommandError(f'gripper.command_margin must be 0 ~ upper: {self.command_margin}')
         topic = lambda key, default: str(p(key, default).value)  # noqa: E731
@@ -96,13 +94,14 @@ class InterfaceNode(Node):
         self.q = {}                   # latest measured position of every joint
         self.goal_raw = 0.0           # real gripper node starts with goal 0 (open)
         self.goal_rad = 0.0
-        self._last_k = None
-        self._last_loop = None
+        self._last_step = None
+        self.ticks = deque()          # loop ticks (stamp msgs) waiting for the finger state at that time
+        self.grip_hist = deque(maxlen=int(2 * self.physics_hz))   # (stamp ns, rh_r1 [rad]), last 2 s
         self.pending_arm = None       # last checked /joint_command waiting for the next loop
         self.pending_grip = None      # last checked /gripper/command raw waiting for the next loop
 
         reliable = lambda depth: QoSProfile(depth=depth, reliability=ReliabilityPolicy.RELIABLE)  # noqa: E731
-        grip_depth = max(10, int(queue_sec * self.publish_hz))
+        grip_depth = max(10, int(queue_sec * self.loop_hz))
         self.pub_arm = self.create_publisher(JointTrajectory, topic('arm.trajectory_topic', '/arm_controller/joint_trajectory'), 10)
         self.pub_grip = self.create_publisher(JointTrajectory, topic('gripper.trajectory_topic', '/gripper_controller/joint_trajectory'), 10)
         self.pub_present = self.create_publisher(JointState, topic('gripper.joint_states_topic', '/gripper/joint_states'), reliable(grip_depth))
@@ -113,11 +112,13 @@ class InterfaceNode(Node):
         self.create_subscription(JointState, topic('state_topic', '/joint_state_broadcaster/joint_states'), self._on_state, 100)
         self.create_subscription(JointState, topic('arm.joint_command_topic', '/joint_command'), self._guard(self._on_arm_command), 10)
         self.create_subscription(Float64, topic('gripper.command_topic', '/gripper/command'), self._guard(self._on_gripper_command), 10)
+        if self.loop_tick_topic:
+            self.create_subscription(CameraInfo, self.loop_tick_topic, lambda m: self._tick(m.header.stamp), reliable(10))
         self.get_logger().info(
             f'arm {len(self.arm_joints)} joints, interp {self.interp_time * 1000:.1f} ms | '
-            f'gripper {self.grip_joint} raw 0~{self.raw_max:g} <-> 0~{self.upper:.4f} rad, {self.profile_velocity} rad/s, '
-            f'states {self.publish_hz:g} Hz | commands applied '
-            + (f'every {self.loop_every} physics steps ({self.command_loop_hz:g} Hz loop)' if self.loop_every else 'on arrival'))
+            f'gripper {self.grip_joint} raw 0~{self.raw_max:g} <-> 0~{self.upper:.4f} rad, {self.profile_velocity} rad/s | '
+            'loop ' + (f'= frames of {self.loop_tick_topic}' if self.loop_tick_topic else f'every {self.every} physics steps')
+            + ', commands applied ' + ('on the loop' if self.commands_on_loop else 'on arrival'))
 
     # ---------------------------------------------------------------- inputs
     def _guard(self, fn):
@@ -144,24 +145,40 @@ class InterfaceNode(Node):
 
     def _on_state(self, msg):
         self.q.update(zip(msg.name, msg.position))
-        t = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-        step = round(t * self.physics_hz)          # physics step index
-        # every `every`-th physics step (= 1/publish_hz), once per step
-        if step % self.every == 0 and step != self._last_k and self.grip_joint in self.q:
-            self._last_k = step
-            present = min(max(self.q[self.grip_joint] * self.raw_max / self.upper, 0.0), self.raw_max)
+        if self.grip_joint in self.q:
+            self.grip_hist.append((msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec, self.q[self.grip_joint]))
+        if not self.loop_tick_topic:
+            step = round((msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9) * self.physics_hz)
+            if step % self.every == 0 and step != self._last_step:
+                self._last_step = step
+                self.ticks.append(msg.header.stamp)
+        self._run_loop()
+
+    def _tick(self, stamp):
+        self.ticks.append(stamp)
+        self._run_loop()
+
+    def _run_loop(self):
+        """Handle the loop ticks whose finger state has arrived (state and tick come on different topics)."""
+        while self.ticks and self.grip_hist:
+            stamp = self.ticks[0]
+            t = stamp.sec * 1_000_000_000 + stamp.nanosec
+            if self.grip_hist[-1][0] < t:
+                return                                   # state at t not received yet
+            self.ticks.popleft()
+            q = next((q for ts, q in reversed(self.grip_hist) if ts <= t), self.grip_hist[0][1])
+            # 1. gripper states with the tick stamp
+            present = min(max(q * self.raw_max / self.upper, 0.0), self.raw_max)
             for pub, val in ((self.pub_present, present), (self.pub_target, self.goal_raw)):
                 m = JointState()
-                m.header.stamp = msg.header.stamp
+                m.header.stamp = stamp
                 m.name = [self.grip_name]
                 m.position = [float(val)]
                 pub.publish(m)
-        # Isaac Sim app loop: apply the commands kept since the last loop (after publishing the states)
-        if self.loop_every and step % self.loop_every == 0 and step != self._last_loop:
-            self._last_loop = step
+            # 2. commands kept since the last tick (Isaac Sim: after the states, last one wins)
             if self.pending_arm is not None:
-                q, self.pending_arm = self.pending_arm, None
-                self._apply_arm(q)
+                q_arm, self.pending_arm = self.pending_arm, None
+                self._apply_arm(q_arm)
             if self.pending_grip is not None:
                 v, self.pending_grip = self.pending_grip, None
                 self._apply_gripper(v)
@@ -182,7 +199,7 @@ class InterfaceNode(Node):
                for n, v in zip(self.arm_joints, q) if not self.limits[n][0] <= v <= self.limits[n][1]]
         if out:
             raise CommandError('/joint_command outside the joint limits: ' + ', '.join(out))
-        if self.loop_every:
+        if self.commands_on_loop:
             self.pending_arm = q              # only the last command of a loop takes effect
         else:
             self._apply_arm(q)
@@ -199,7 +216,7 @@ class InterfaceNode(Node):
             raise CommandError(f'/gripper/command must be 0 ~ {self.raw_max:g} (raw): {v}')
         if self.grip_joint not in self.q:
             raise CommandError(f'/gripper/command before the first state of {self.grip_joint}')
-        if self.loop_every:
+        if self.commands_on_loop:
             self.pending_grip = v
         else:
             self._apply_gripper(v)

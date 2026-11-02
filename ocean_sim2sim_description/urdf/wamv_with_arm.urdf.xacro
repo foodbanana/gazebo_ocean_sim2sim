@@ -59,6 +59,14 @@
     </gazebo>
   </xacro:if>
 
+  <!-- ===== arm sensors in Gazebo (cameras ...) =====
+       arm_gazebo_xacro: file with the arm's <gazebo> sensor blocks (empty = none) -->
+  <xacro:arg name="arm_gazebo_xacro"
+             default="$(find ur5_rh_p12_description)/urdf/ur5_rh_p12.gazebo.xacro"/>
+  <xacro:if value="${'$(arg arm_gazebo_xacro)' != ''}">
+    <xacro:include filename="$(arg arm_gazebo_xacro)"/>
+  </xacro:if>
+
   <!-- ===== collisions inside the model (arm <-> boat, arm <-> itself) =====
        Gazebo skips collisions between links of the same model unless self_collide is on.
        Links connected directly by a joint are still not checked against each other.

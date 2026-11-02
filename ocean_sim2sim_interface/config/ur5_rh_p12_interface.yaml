@@ -5,9 +5,13 @@ ocean_sim2sim_interface:
   ros__parameters:
     use_sim_time: true
     publish_queue_sec: 3.0             # RELIABLE queue depth = this x topic rate (Isaac Sim: 3 s)
-    physics_hz: 240.0                  # Gazebo physics rate (empty_ocean.sdf), must be a multiple of gripper.publish_hz
-    command_loop_hz: 30.0              # apply /joint_command and /gripper/command once per 30 Hz loop like Isaac Sim
-                                       #   (its app loop: up to 33 ms wait, last command of a loop wins). 0 = on arrival
+    physics_hz: 240.0                  # Gazebo physics rate (empty_ocean.sdf), must be a multiple of loop_hz
+    # Loop = Isaac Sim app loop (one render, 30 Hz): gripper states, then commands, once per loop tick.
+    loop_tick_topic: /cam/wrist/color/camera_info   # tick on every wrist camera frame (same stamps as the images).
+                                                    #   "" = no camera: tick every physics_hz / loop_hz steps
+    loop_hz: 30.0                      # loop rate without a camera (and queue depth of the gripper topics)
+    commands_on_loop: true             # true = apply /joint_command, /gripper/command once per loop (last wins), like
+                                       #   Isaac Sim (up to 33 ms wait). false = apply on arrival
     state_topic: /joint_state_broadcaster/joint_states   # all joints (arm + fingers), every physics step
 
     arm:
@@ -22,7 +26,6 @@ ocean_sim2sim_interface:
       raw_max: 1150.0                  # raw 0 (open) ~ 1150 (closed), real gripper node
       upper: 1.13514578304             # [rad] rh_r1_joint at raw_max (URDF limit)
       profile_velocity: 0.516          # [rad/s] = 1.1351 rad / 2.2 s (real close / open ~2.2 s)
-      publish_hz: 30.0                 # /gripper/joint_states, /gripper/target (every 8th physics step)
       command_margin: 0.001            # [rad] Gazebo only: keep the joint target this far below the limit
                                        #   (a joint driven exactly onto its limit gets stuck in DART)
       command_topic: /gripper/command

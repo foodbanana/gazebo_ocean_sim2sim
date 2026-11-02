@@ -91,6 +91,15 @@ ros2 topic pub --once /joint_command sensor_msgs/msg/JointState \
 ros2 topic pub --once /gripper/command std_msgs/msg/Float64 "{data: 1150.0}"   # raw 0 (open) ~ 1150 (closed)
 ```
 
+## Wrist camera
+
+D435i color, 640 x 480 rgb8, same intrinsics as the Isaac Sim / real camera:
+`/cam/wrist/color/image_raw`, `/cam/wrist/color/camera_info` ([`docs/wrist_camera.md`](docs/wrist_camera.md)).
+
+```bash
+ros2 run rqt_image_view rqt_image_view /cam/wrist/color/image_raw
+```
+
 ## Robot arm description
 
 ```bash
