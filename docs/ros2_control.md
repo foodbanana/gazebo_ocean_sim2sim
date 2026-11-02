@@ -44,7 +44,7 @@ ros2 topic echo /joint_states
 
 ```text
 ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py
- ├─ xacro wamv_with_arm.urdf.xacro  → URDF 1개 (임시 파일)
+ ├─ xacro wamv_with_arm.urdf.xacro  → URDF 1개 (/tmp/ocean_sim2sim_*.urdf, launch 가 끝나면 지움)
  ├─ ocean_sim2sim_gazebo/empty_ocean.launch.py  (urdf:= 위 파일)
  │    ├─ gz sim empty_ocean.sdf
  │    ├─ VRX: URDF → SDF → 원점에 스폰, /wamv/* · /clock 브리지

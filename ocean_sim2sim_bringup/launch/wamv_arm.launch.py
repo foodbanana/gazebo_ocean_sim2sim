@@ -19,6 +19,8 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.actions import IncludeLaunchDescription
 from launch.actions import OpaqueFunction
+from launch.actions import RegisterEventHandler
+from launch.event_handlers import OnShutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -61,7 +63,13 @@ def launch(context, *args, **kwargs):
         arguments=['joint_state_broadcaster', 'arm_controller', 'gripper_controller',
                    '--controller-manager-timeout', '120'])
 
-    return [sim, rsp, spawner]
+    # remove the temporary URDF when the launch ends (Ctrl+C or Gazebo closed)
+    def remove_urdf(_context):
+        if os.path.exists(urdf_path):
+            os.remove(urdf_path)
+    cleanup = RegisterEventHandler(OnShutdown(on_shutdown=[OpaqueFunction(function=remove_urdf)]))
+
+    return [cleanup, sim, rsp, spawner]
 
 
 def generate_launch_description():
