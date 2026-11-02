@@ -14,6 +14,7 @@
   <exec_depend>wamv_gazebo</exec_depend>
   <!-- default arm -->
   <exec_depend>ur5_rh_p12_description</exec_depend>
+  <exec_depend>gz_ros2_control</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

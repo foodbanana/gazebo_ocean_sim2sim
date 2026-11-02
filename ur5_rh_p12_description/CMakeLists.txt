@@ -8,6 +8,7 @@ ament_environment_hooks("hooks/resource_paths.dsv.in")
 ament_environment_hooks("hooks/resource_paths.sh")
 
 install(DIRECTORY
+  config
   meshes
   urdf
   DESTINATION share/${PROJECT_NAME})

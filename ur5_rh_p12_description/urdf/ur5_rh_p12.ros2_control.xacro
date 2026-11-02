@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<!--
+  ros2_control interfaces of the UR5 + RH-P12-RN arm (joint names as in ur5_rh_p12_d435i.urdf.xacro).
+
+  Included by a parent description (e.g. ocean_sim2sim_description/urdf/wamv_with_arm.urdf.xacro)
+  next to the arm itself. It only emits the <ros2_control> tag; the hardware plugin is an arg so the
+  same file works for Gazebo (default) or another system.
+
+    arm 6 joints + rh_r1_joint : position command, position / velocity state
+    rh_r2, rh_l1, rh_l2        : mimic joints of rh_r1_joint (URDF <mimic>), state only
+
+  Initial joint values = home pose of the Isaac Sim training setup:
+    [0, -pi/2, pi/2, -pi/2, -pi/2, 0], gripper open (0).
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="ros2_control_plugin" default="gz_ros2_control/GazeboSimSystem"/>
+
+  <xacro:macro name="ur5_rh_p12_position_joint" params="name initial">
+    <joint name="${name}">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">${initial}</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="ur5_rh_p12_mimic_joint" params="name">
+    <joint name="${name}">
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </xacro:macro>
+
+  <ros2_control name="ur5_rh_p12" type="system">
+    <hardware>
+      <plugin>$(arg ros2_control_plugin)</plugin>
+    </hardware>
+
+    <xacro:ur5_rh_p12_position_joint name="shoulder_pan_joint"  initial="0.0"/>
+    <xacro:ur5_rh_p12_position_joint name="shoulder_lift_joint" initial="-1.5708"/>
+    <xacro:ur5_rh_p12_position_joint name="elbow_joint"         initial="1.5708"/>
+    <xacro:ur5_rh_p12_position_joint name="wrist_1_joint"       initial="-1.5708"/>
+    <xacro:ur5_rh_p12_position_joint name="wrist_2_joint"       initial="-1.5708"/>
+    <xacro:ur5_rh_p12_position_joint name="wrist_3_joint"       initial="0.0"/>
+
+    <xacro:ur5_rh_p12_position_joint name="rh_r1_joint" initial="0.0"/>
+    <xacro:ur5_rh_p12_mimic_joint name="rh_r2"/>
+    <xacro:ur5_rh_p12_mimic_joint name="rh_l1"/>
+    <xacro:ur5_rh_p12_mimic_joint name="rh_l2"/>
+  </ros2_control>
+
+</robot>

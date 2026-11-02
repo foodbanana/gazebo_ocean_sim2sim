@@ -13,6 +13,7 @@ VRX is used as a dependency and is not modified.
 | `ocean_sim2sim_gazebo` | `empty_ocean` world (VRX Coast Waves only, no terrain) and launch files |
 | `ur5_rh_p12_description` | UR5 (CB3) + ROBOTIS RH-P12-RN(A) gripper + RealSense D435i wrist camera as one URDF |
 | `ocean_sim2sim_description` | WAM-V (VRX hull, hydrodynamics, 2 aft thrusters, IMU) with a pluggable robot arm on the deck |
+| `ocean_sim2sim_bringup` | One launch file: ocean + WAM-V with the arm + ros2_control controllers |
 
 ## Requirements
 
@@ -35,6 +36,9 @@ source install/setup.bash
 ## Run
 
 ```bash
+# ocean + WAM-V + UR5 / RH-P12-RN / D435i + controllers (see docs/ros2_control.md)
+ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py
+
 # empty ocean + stock WAM-V at the world origin
 ros2 launch ocean_sim2sim_gazebo empty_ocean.launch.py
 
@@ -68,6 +72,17 @@ is not welded to the world.
 | `arm_root_link` | `robot_mount` | root link of that arm |
 | `arm_mount_xyz` / `arm_mount_rpy` | `0 0 1.30` / `0 0 0` | pose on the deck (deck top centre, facing the bow) |
 | `self_collide` | `true` | collisions between links of the model (arm <-> boat, arm <-> itself) |
+
+## Arm control (ros2_control)
+
+`gz_ros2_control` with `forward_command_controller` (position) for the 6 arm joints and the gripper,
+plus `joint_state_broadcaster`. Details, tuning and test results: [`docs/ros2_control.md`](docs/ros2_control.md).
+
+```bash
+ros2 topic pub --once /arm_controller/commands std_msgs/msg/Float64MultiArray \
+  "{data: [0.3, -1.5708, 1.5708, -1.5708, -1.5708, 0.0]}"
+ros2 topic pub --once /gripper_controller/commands std_msgs/msg/Float64MultiArray "{data: [1.0]}"
+```
 
 ## Robot arm description
 

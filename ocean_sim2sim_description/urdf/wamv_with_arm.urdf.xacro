@@ -43,6 +43,22 @@
     <origin xyz="$(arg arm_mount_xyz)" rpy="$(arg arm_mount_rpy)"/>
   </joint>
 
+  <!-- ===== arm control (ros2_control in Gazebo) =====
+       arm_ros2_control_xacro: file that emits the arm's <ros2_control> tag (empty = no control)
+       arm_controllers_yaml  : controller_manager parameters for that arm -->
+  <xacro:arg name="arm_ros2_control_xacro"
+             default="$(find ur5_rh_p12_description)/urdf/ur5_rh_p12.ros2_control.xacro"/>
+  <xacro:arg name="arm_controllers_yaml"
+             default="$(find ur5_rh_p12_description)/config/ros2_controllers.yaml"/>
+  <xacro:if value="${'$(arg arm_ros2_control_xacro)' != ''}">
+    <xacro:include filename="$(arg arm_ros2_control_xacro)"/>
+    <gazebo>
+      <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+        <parameters>$(arg arm_controllers_yaml)</parameters>
+      </plugin>
+    </gazebo>
+  </xacro:if>
+
   <!-- ===== collisions inside the model (arm <-> boat, arm <-> itself) =====
        Gazebo skips collisions between links of the same model unless self_collide is on.
        Links connected directly by a joint are still not checked against each other.
