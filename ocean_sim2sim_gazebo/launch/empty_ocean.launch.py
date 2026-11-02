@@ -12,6 +12,7 @@
 # Reuses the helpers in vrx_gz.launch, the same ones competition.launch.py uses.
 
 from launch import LaunchDescription
+from launch.actions import AppendEnvironmentVariable
 from launch.actions import DeclareLaunchArgument
 from launch.actions import OpaqueFunction
 from launch.substitutions import LaunchConfiguration
@@ -36,7 +37,12 @@ def launch(context, *args, **kwargs):
     if robot_urdf:
         model.set_urdf(robot_urdf)
 
-    launch_processes = []
+    # Let Gazebo resolve package://<pkg>/... mesh URIs of any installed ROS package
+    # (e.g. ur_description, realsense2_description used by the arm on the deck).
+    launch_processes = [
+        AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.join(prefix, 'share'))
+        for prefix in os.environ.get('AMENT_PREFIX_PATH', '').split(os.pathsep) if prefix
+    ]
     launch_processes.extend(vrx_gz.launch.simulation(
         world_name, flag('headless'), flag('paused'), arg('extra_gz_args')))
 

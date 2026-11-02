@@ -12,6 +12,7 @@ VRX is used as a dependency and is not modified.
 |---|---|
 | `ocean_sim2sim_gazebo` | `empty_ocean` world (VRX Coast Waves only, no terrain) and launch files |
 | `ur5_rh_p12_description` | UR5 (CB3) + ROBOTIS RH-P12-RN(A) gripper + RealSense D435i wrist camera as one URDF |
+| `ocean_sim2sim_description` | WAM-V (VRX hull, hydrodynamics, 2 aft thrusters, IMU) with a pluggable robot arm on the deck |
 
 ## Requirements
 
@@ -37,6 +38,10 @@ source install/setup.bash
 # empty ocean + stock WAM-V at the world origin
 ros2 launch ocean_sim2sim_gazebo empty_ocean.launch.py
 
+# WAM-V with the UR5 + RH-P12-RN + D435i arm on the deck
+ros2 launch ocean_sim2sim_gazebo empty_ocean.launch.py \
+  urdf:=$(ros2 pkg prefix ocean_sim2sim_description)/share/ocean_sim2sim_description/urdf/wamv_with_arm.urdf.xacro
+
 # custom boat model
 ros2 launch ocean_sim2sim_gazebo empty_ocean.launch.py urdf:=/path/to/boat.urdf.xacro
 
@@ -46,6 +51,18 @@ ros2 launch ocean_sim2sim_gazebo empty_ocean.launch.py world:=nbpark
 
 Waves and wind are set in `ocean_sim2sim_gazebo/worlds/empty_ocean.sdf`
 (`vrx::PublisherPlugin` `gain` / `period` / `direction` / `steepness`, and `vrx::USVWind`).
+
+## Boat with an arm (`ocean_sim2sim_description`)
+
+`urdf/wamv_with_arm.urdf.xacro` = WAM-V + one fixed joint `wamv/base_link -> <arm root link>`.
+Any arm works if its xacro is a complete `<robot>` file whose args all have defaults and whose root link
+is not welded to the world.
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `arm_xacro` | `ur5_rh_p12_description/urdf/ur5_rh_p12_d435i.urdf.xacro` | arm to mount |
+| `arm_root_link` | `robot_mount` | root link of that arm |
+| `arm_mount_xyz` / `arm_mount_rpy` | `0 0 1.30` / `0 0 0` | pose on the deck (deck top centre, facing the bow) |
 
 ## Robot arm description
 

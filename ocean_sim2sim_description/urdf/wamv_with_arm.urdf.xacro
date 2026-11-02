@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<!--
+  WAM-V + a robot arm on the deck.
+
+  The arm is pluggable. Any arm xacro works if it
+    - is a complete robot description (a <robot> file) with xacro args that all have defaults, and
+    - has ONE root link that is not welded to the world (arm_root_link).
+  This file adds a single fixed joint: ${namespace}/base_link -> arm_root_link.
+
+  Usage:
+    xacro wamv_with_arm.urdf.xacro                       # UR5 + RH-P12-RN + D435i (default)
+    xacro wamv_with_arm.urdf.xacro arm_xacro:=/path/to/other_arm.urdf.xacro arm_root_link:=base_link
+  Arm xacro args can be passed on the same command line (xacro args are global),
+    e.g. kinematics_params:=/path/to/my_robot_calibration.yaml
+-->
+<robot xmlns:xacro="http://ros.org/wiki/xacro" name="wamv_with_arm">
+
+  <!-- ===== args given by vrx_gz (Model.xacro_cmd) when spawning. Only "namespace" is used ===== -->
+  <xacro:arg name="namespace" default="wamv"/>
+  <xacro:arg name="locked" default="false"/>               <!-- unused: no dock lock -->
+  <xacro:arg name="vrx_sensors_enabled" default="false"/>  <!-- unused: no VRX sensor set -->
+  <xacro:arg name="thruster_config" default="H"/>          <!-- unused: always H (2 aft thrusters) -->
+  <xacro:property name="namespace" value="$(arg namespace)" scope="global"/>
+  <xacro:arg name="macros_file" default="$(find wamv_gazebo)/urdf/macros.xacro"/>
+
+  <!-- ===== arm ===== -->
+  <xacro:arg name="arm_xacro" default="$(find ur5_rh_p12_description)/urdf/ur5_rh_p12_d435i.urdf.xacro"/>
+  <xacro:arg name="arm_root_link" default="robot_mount"/>
+  <!-- deck top centre (deck plate top at z = 1.30), arm facing the bow (+x) -->
+  <xacro:arg name="arm_mount_xyz" default="0 0 1.30"/>
+  <xacro:arg name="arm_mount_rpy" default="0 0 0"/>
+
+  <!-- ===== boat ===== -->
+  <xacro:include filename="$(find ocean_sim2sim_description)/urdf/wamv_base.xacro"/>
+  <xacro:ocean_wamv/>
+
+  <!-- ===== arm on the deck ===== -->
+  <xacro:include filename="$(arg arm_xacro)"/>
+
+  <joint name="arm_mount_joint" type="fixed">
+    <parent link="${namespace}/base_link"/>
+    <child link="$(arg arm_root_link)"/>
+    <origin xyz="$(arg arm_mount_xyz)" rpy="$(arg arm_mount_rpy)"/>
+  </joint>
+
+</robot>
