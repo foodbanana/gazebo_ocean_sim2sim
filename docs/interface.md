@@ -62,6 +62,21 @@ ros2 topic echo /gripper/joint_states
 
 관절 한계는 `/robot_description` (robot_state_publisher) 의 URDF 에서 읽는다.
 
+### 명령을 적용하는 때: `command_loop_hz` (기본 30 = Isaac Sim)
+
+Isaac Sim 은 ROS 명령을 **앱 (렌더) 루프마다 한 번** (30 Hz) 처리한다. 그래서
+- 명령이 도착한 뒤 적용까지 최대 33 ms 를 기다리고
+- 한 루프 안에 명령이 여러 개 오면 **마지막 것만** 효과가 있다 (60 Hz 로 보내도 30 Hz 로 적용)
+
+Gazebo 도 같게 한다: 명령은 도착할 때 검사만 하고 보관했다가, 물리 스텝 번호가 8 (= 240 / 30) 의 배수인 스텝에서
+(그 스텝의 `/gripper/*` 를 발행한 뒤, Isaac Sim 과 같은 순서) 마지막 것을 적용한다.
+`command_loop_hz: 0` 이면 도착하는 즉시 적용한다 (Isaac Sim 보다 25~30 ms 빠름, 5 장 표).
+
+```bash
+# 즉시 적용으로 바꿔 보기 (설정 파일을 복사해 command_loop_hz: 0.0 으로 고친 뒤)
+ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py interface_config:=/path/to/my_interface.yaml
+```
+
 ---
 
 ## 3. 팔: `/joint_command`
@@ -100,11 +115,11 @@ Isaac Sim `GripperBridge` + `GripperProfile` (실물 Dynamixel Profile Velocity 
 | `/joint_states` | 팔 6, 120 Hz, pos·vel·eff | 팔 6 (순서 같음), **120.0 Hz**, pos·vel·eff ✅ |
 | `/gripper/joint_states`·`/gripper/target` | 30 Hz, 같은 stamp | **30.0 Hz**, 같은 stamp ✅ |
 | 홈 자세 유지 10 s | | 0.000° ✅ |
-| 0.03 rad 명령 (check_ros2 4 번) | 움직이기 시작 33~50 ms, 50 % 50~67 ms, 오버슈트 0 % | **8 ms, 37.5 ms, 0 %** (6 장) |
+| 0.03 rad 명령 (check_ros2 4 번), 보내는 때를 바꿔 8 번 | 움직이기 시작 33~50 ms, 50 % 50~67 ms, 오버슈트 0 % | **30 Hz 루프: 17~38 ms, 46~67 ms, 0 %** / 즉시: 8 ms, 38 ms |
 | 보간된 목표 | 33 ms 직선 | 매 스텝 같은 폭으로 증가하는 직선, 9 스텝 (37.5 ms) 에 도착 |
-| 시험 A (0.05 rad, 보간 포함) | | 오버슈트 0 %, 정착 0.121 s, 다른 관절 0.000° |
-| 시험 C (50 Hz 사인, 보간 포함) | | 지연 46~48 ms, RMS 1.8° |
-| 그리퍼 닫기 / 열기 (시험 D) | 2.15 s / 2.15 s, 반응 0.033 s, 기준 1.98~2.42 s | **2.18 s / 2.18 s**, 반응 0.017 s ✅ |
+| 시험 A (0.05 rad, 보간 포함, 즉시 적용) | | 오버슈트 0 %, 정착 0.121 s, 다른 관절 0.000° |
+| 시험 C (50 Hz 사인, 보간 포함) | | 30 Hz 루프: 지연 58~62 ms, RMS 2.2~2.4° / 즉시: 46~50 ms, 1.8° |
+| 그리퍼 닫기 / 열기 (시험 D) | 2.15 s / 2.15 s, 반응 0.033 s, 기준 1.98~2.42 s | **30 Hz 루프: 2.20 s / 2.19 s, 반응 0.029~0.033 s** ✅ / 즉시: 2.18 s, 0.017 s |
 | 그리퍼 mimic | | 최대 0.2° |
 | 잘못된 명령 (관절 한계 밖, 이름 틀림, raw 2000, NaN) | 에러로 중단 | FATAL 로그 → launch 전체 종료, 남는 프로세스 없음 ✅ |
 
@@ -114,7 +129,8 @@ Isaac Sim `GripperBridge` + `GripperProfile` (실물 Dynamixel Profile Velocity 
 
 | 항목 | Isaac Sim | Gazebo | 영향 |
 |---|---|---|---|
-| 명령을 받는 때 | 앱 루프 (30 Hz) 마다 한 번 → 받기까지 최대 33 ms 기다림 | 받는 즉시 (다음 물리 스텝) | Gazebo 가 반응이 약 25~30 ms 빠르다. 실물 UR servoJ (lookahead 0.1 s) 는 둘보다 느리다 |
+| 명령을 받는 때 | 앱 루프 (30 Hz) 마다 한 번 → 최대 33 ms 기다림 | 같음 (`command_loop_hz: 30`, 3 장). 0.03 rad 명령의 시작이 Isaac Sim 보다 0~15 ms 빠른 쪽으로 겹침 | 실물 UR servoJ (lookahead 0.1 s) 는 둘보다 느리다 |
+| 물리 주기 | 120 Hz | 240 Hz | 정책이 보는 주기 (`/joint_states` 120 Hz, 30 Hz 토픽, 명령 30 Hz 적용) 는 같다. 물리 엔진 (PhysX / DART) 이 달라 물리 주기를 맞춰도 동역학이 같아지지 않으므로, 바깥 응답을 같은 시험으로 맞춘다 |
 | 보간 도착 | 33.3 ms | 37.5 ms (한 스텝 늦게 도착) | 4 ms |
 | `/joint_states` velocity | 관절각 차분 (PhysX 속도값이 실제보다 작아서) | Gazebo 관절 속도 | stage1 은 velocity 를 안 씀 |
 | `/joint_states` effort | PhysX 관절 힘 | Gazebo 관절 effort | stage1 은 effort 를 안 씀 |

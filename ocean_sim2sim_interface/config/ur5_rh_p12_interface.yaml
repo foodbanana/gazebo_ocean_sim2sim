@@ -6,6 +6,8 @@ ocean_sim2sim_interface:
     use_sim_time: true
     publish_queue_sec: 3.0             # RELIABLE queue depth = this x topic rate (Isaac Sim: 3 s)
     physics_hz: 240.0                  # Gazebo physics rate (empty_ocean.sdf), must be a multiple of gripper.publish_hz
+    command_loop_hz: 30.0              # apply /joint_command and /gripper/command once per 30 Hz loop like Isaac Sim
+                                       #   (its app loop: up to 33 ms wait, last command of a loop wins). 0 = on arrival
     state_topic: /joint_state_broadcaster/joint_states   # all joints (arm + fingers), every physics step
 
     arm:

@@ -88,30 +88,35 @@ def test_hold(n):
         print('  %-20s %.4f' % (j, math.degrees(max(abs(d[j] - h) for _, d in n.log))))
 
 
-def test_interp(n, size=0.03):
-    """Isaac Sim check_ros2 #4 (0.03 rad step through /joint_command): start moving 33-50 ms, 50 % at 50-67 ms."""
-    n.go_home(2.0)
+def test_interp(n, size=0.03, trials=8):
+    """Isaac Sim check_ros2 #4 (0.03 rad step through /joint_command): start moving 33-50 ms, 50 % at 50-67 ms.
+    Repeated with the command sent at different times (the wait for the 30 Hz command loop varies)."""
     k = ARM.index('wrist_3_joint')
-    tgt = list(HOME)
-    tgt[k] += size
-    n.ref.clear()
-    n.log.clear()
-    t0 = n.now()
-    n.arm(tgt)
-    n.spin_for(0.4)
-    print('INTERP: one %.3f rad command on wrist_3_joint (33 ms linear interpolation)' % size)
-    print('  %7s %12s %12s' % ('t [ms]', 'reference', 'measured'))
-    for t, r in n.since(t0, n.ref):
-        if t > 0.06:
-            break
-        meas = min(n.since(t0), key=lambda x: abs(x[0] - t))[1]['wrist_3_joint']
-        print('  %7.1f %12.4f %12.4f' % (t * 1000, r[k] - HOME[k], meas - HOME[k]))
-    rel = [(t, (d['wrist_3_joint'] - HOME[k]) / size) for t, d in n.since(t0)]
-    start = next((t for t, r in rel if r > 0.01), float('nan'))
-    t50 = next((t for t, r in rel if r >= 0.5), float('nan'))
-    peak = max(r for _, r in rel)
-    print('  start moving %.1f ms, 50 %% at %.1f ms, overshoot %.1f %%   (Isaac Sim: 33-50 ms, 50-67 ms, 0 %%)'
-          % (start * 1000, t50 * 1000, (peak - 1) * 100))
+    print('INTERP: %d x one %.3f rad command on wrist_3_joint' % (trials, size))
+    starts, t50s, peaks = [], [], []
+    for i in range(trials):
+        n.go_home(1.0 + i * 0.0047)       # shift the send time by ~1 physics step each trial
+        tgt = list(HOME)
+        tgt[k] += size
+        n.ref.clear()
+        n.log.clear()
+        t0 = n.now()
+        n.arm(tgt)
+        n.spin_for(0.4)
+        if i == 0:
+            print('  first trial:  %7s %12s %12s' % ('t [ms]', 'reference', 'measured'))
+            for t, r in n.since(t0, n.ref):
+                if t > 0.09:
+                    break
+                meas = min(n.since(t0), key=lambda x: abs(x[0] - t))[1]['wrist_3_joint']
+                print('                %7.1f %12.4f %12.4f' % (t * 1000, r[k] - HOME[k], meas - HOME[k]))
+        rel = [(t, (d['wrist_3_joint'] - HOME[k]) / size) for t, d in n.since(t0)]
+        starts.append(next((t for t, r in rel if r > 0.01), float('nan')) * 1000)
+        t50s.append(next((t for t, r in rel if r >= 0.5), float('nan')) * 1000)
+        peaks.append((max(r for _, r in rel) - 1) * 100)
+    print('  start moving %.1f ~ %.1f ms, 50 %% at %.1f ~ %.1f ms, overshoot max %.1f %%'
+          % (min(starts), max(starts), min(t50s), max(t50s), max(peaks)))
+    print('  (Isaac Sim: start 33 ~ 50 ms, 50 % at 50 ~ 67 ms, overshoot 0 %)')
     n.go_home()
 
 
