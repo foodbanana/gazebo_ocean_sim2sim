@@ -16,9 +16,10 @@
   <xacro:include filename="$(find wamv_gazebo)/urdf/wamv_gazebo.xacro"/>
   <xacro:include filename="$(find wamv_description)/urdf/battery.xacro"/>
 
-  <!-- imu_*: IMU pose in ${namespace}/base_link. Default = centre of the deck plate underside
-       (deck plate is 0.1 m thick, top at z = 1.30) -->
-  <xacro:macro name="ocean_wamv" params="imu_x:=0.0 imu_y:=0.0 imu_z:=1.20">
+  <!-- imu_*: IMU pose in ${namespace}/base_link. Default = where the stock VRX WAM-V has it
+       (vrx wamv_gazebo.urdf.xacro: wamv_imu y=-0.2, macro defaults x=0.3, z=1.3 = deck top), 100 Hz, VRX noise.
+       Published as /base/imu (Isaac Sim moving-base topic, policy input base_imu; docs/drone_px4.md) -->
+  <xacro:macro name="ocean_wamv" params="imu_x:=0.3 imu_y:=-0.2 imu_z:=1.3">
 
     <!-- hull (wamv_base.urdf.xacro) + aft thrusters + Surface/SimpleHydrodynamics plugins -->
     <xacro:wamv_gazebo thruster_layout="$(find wamv_gazebo)/urdf/thruster_layouts/wamv_aft_thrusters.xacro"/>

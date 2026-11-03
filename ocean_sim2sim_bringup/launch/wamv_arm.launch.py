@@ -100,6 +100,7 @@ def launch(context, *args, **kwargs):
 
     # 7. episode scene: drone + /sim/drone_kill, /sim/reset
     world = os.path.basename(os.path.splitext(arg('world'))[0])
+    imu_gz = f'/world/{world}/model/wamv/link/wamv/imu_wamv_link/sensor/imu_wamv_sensor/imu'
     scene_bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
@@ -113,8 +114,10 @@ def launch(context, *args, **kwargs):
                    '/drone/state@std_msgs/msg/String[gz.msgs.StringMsg',
                    # evaluation only (grasp judge), not policy inputs
                    '/drone/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
-                   '/drone/contacts@ros_gz_interfaces/msg/Contacts[gz.msgs.Contacts'],
-        remappings=[('/model/wamv/odometry', '/sim/boat_odometry')],
+                   '/drone/contacts@ros_gz_interfaces/msg/Contacts[gz.msgs.Contacts',
+                   # boat IMU (stock VRX WAM-V IMU: pose, 100 Hz, noise) -> /base/imu (Isaac Sim moving-base topic)
+                   f'{imu_gz}@sensor_msgs/msg/Imu[gz.msgs.IMU'],
+        remappings=[('/model/wamv/odometry', '/sim/boat_odometry'), (imu_gz, '/base/imu')],
         parameters=[{'use_sim_time': True}])
     scene = Node(
         package='ocean_sim2sim_interface',
