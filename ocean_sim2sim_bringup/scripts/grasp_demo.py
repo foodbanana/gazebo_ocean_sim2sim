@@ -468,6 +468,8 @@ def main():
                    help='default: drone at drone_pos_base (no offset) as Isaac Sim; targets: scene drone targets + offset')
     a.add_argument('--no-reset', action='store_true', help='do not call /sim/reset before a case (use the drone as it is)')
     a.add_argument('--tcp-offset', type=float, nargs=3, default=None, metavar=('DX', 'DY', 'DZ'))
+    a.add_argument('--reach-tol', type=float, nargs=2, default=None, metavar=('MM', 'DEG'),
+                   help='override reach.pos_tol / rot_tol_deg (Isaac Sim fixed table: 1.5 mm, 0.5 deg; waves need more)')
     a.add_argument('--report-dir', default=os.path.expanduser('~/ocean_sim2sim_reports'))
     a.add_argument('--base-link', default='robot_mount')
     a.add_argument('--tcp-link', default='rh_p12_rn_tcp')
@@ -476,6 +478,8 @@ def main():
     with open(args.config) as f:
         dc = yaml.safe_load(f)
     cases = list(CASES) if 'all' in args.case else args.case
+    if args.reach_tol is not None:
+        dc['reach']['pos_tol'], dc['reach']['rot_tol_deg'] = args.reach_tol[0] / 1000.0, args.reach_tol[1]
 
     rclpy.init()
     n = Demo(args, dc)
@@ -503,7 +507,7 @@ def main():
         if not args.no_reset:
             n.set_scene_params(args.drone == 'targets', 0.03 if args.drone == 'targets' else 0.0, n.default_pos)
         log(f'grasp_demo {datetime.datetime.now().isoformat(timespec="seconds")}  cases {cases} x {args.repeat}, '
-            f'drone {args.drone}, config {args.config}')
+            f'drone {args.drone}, config {args.config}, reach {dc["reach"]}')
         oks = []
         for _ in range(args.repeat):
             for c in cases:
