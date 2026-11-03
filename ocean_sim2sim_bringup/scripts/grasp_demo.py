@@ -149,8 +149,10 @@ class Episode:
     # ---- one control tick
     def tick(self, control=None):
         n = self.n
+        # poll every 2 ms (was 0.5 ms: a busy wait that took CPU and the GIL from the spin thread; same as policy_eval).
+        # A tick starts at most 2 ms (wall) late in a 20 ms (50 Hz) period; commands carry the sim time of the tick.
         while rclpy.ok() and n.now() < self.next_tick:
-            time.sleep(0.0005)
+            time.sleep(0.002)
         self.next_tick += self.dt
         self.armed = n.drone_armed(self.armed, self.t_kill is not None)
         o = self.observe()
