@@ -25,27 +25,24 @@ import numpy as np
 import rclpy
 import yaml
 from ament_index_python.packages import get_package_share_directory
-from nav_msgs.msg import Odometry
 from rcl_interfaces.msg import Parameter as ParamMsg
 from rcl_interfaces.msg import ParameterType, ParameterValue
 from rcl_interfaces.srv import SetParameters
 from rclpy.experimental import EventsExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from ros_gz_interfaces.msg import Contacts
 from scipy.spatial.transform import Rotation, Slerp
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Float64, String
+from std_msgs.msg import Float64
 from std_srvs.srv import Trigger
 
 from ocean_sim2sim_interface.grasp_judge import GraspJudge
-from ocean_sim2sim_interface.kinematics import Chain, quat_matrix, rot_log
+from ocean_sim2sim_interface.kinematics import rot_log
+from ocean_sim2sim_interface.observe import GraspObservation
 
 CASES = ('success', 'offset_y', 'offset_x', 'empty', 'miss')
 EXPECT = {'success': ('held', None), 'offset_y': ('held', None), 'offset_x': ('held', None),
           'empty': ('failed', 'no_grasp_empty'), 'miss': ('failed', 'no_grasp')}
-FINGER_LINKS = ('rh_p12_rn_r1', 'rh_p12_rn_r2', 'rh_p12_rn_l1', 'rh_p12_rn_l2')
 ROW_KEYS = ('t', 'phase', 'state', 'tcp_x', 'tcp_y', 'tcp_z', 'drone_x', 'drone_y', 'drone_z', 'grip_deg', 'f_right', 'f_left',
             'f_other', 'armed', 'rel_x', 'rel_y', 'rel_z', 'rel_rx_deg', 'rel_ry_deg', 'rel_rz_deg')
 
@@ -54,74 +51,31 @@ class Abort(Exception):
     pass
 
 
-def pose_matrix(pose):
-    p, o = pose.position, pose.orientation
-    T = np.eye(4)
-    T[:3, :3], T[:3, 3] = quat_matrix([o.x, o.y, o.z, o.w]), [p.x, p.y, p.z]
-    return T
-
-
-class Demo(Node):
+class Demo(Node, GraspObservation):
     def __init__(self, args, dc):
         super().__init__('grasp_demo', parameter_overrides=[Parameter('use_sim_time', value=True)])
         self.args, self.dc = args, dc
-        self.q = {}
-        self.boat = self.drone = self.contacts = self.urdf = None
-        self.drone_state = None
-        latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self.create_subscription(String, '/robot_description', lambda m: setattr(self, 'urdf', m.data), latched)
-        self.js_t = -1.0
-        # what a policy gets: /joint_states (arm, 120 Hz) and /gripper/joint_states (raw, camera loop ~30 Hz).
-        # (the 240 Hz all-joint topic made this Python node fall up to 200 ms behind)
-        self.create_subscription(JointState, '/joint_states', self._on_js, 50)
-        self.create_subscription(JointState, '/gripper/joint_states', self._on_grip, 20)
-        self.create_subscription(Odometry, '/sim/boat_odometry', lambda m: setattr(self, 'boat', m), 50)
-        self.create_subscription(Odometry, '/drone/odometry', lambda m: setattr(self, 'drone', m), 50)
-        self.create_subscription(Contacts, '/drone/contacts', self._on_contacts, 50)
-        self.create_subscription(String, '/drone/state', lambda m: setattr(self, 'drone_state', m.data), 10)
-        # PX4 drone (drone_mode px4): motors on = PX4 armed (Isaac Sim judge 'armed' = PX4 armed flag)
-        self.px4 = None
-        self.create_subscription(String, '/drone/px4/state', lambda m: setattr(self, 'px4', json.loads(m.data)), 10)
+        # judge observation sources (ocean_sim2sim_interface/observe.py, shared with ocean_sim2sim_policy policy_eval.py)
+        self.init_grasp_observation(dc['gripper_upper'], dc['gripper_raw_max'])
         self.arm_pub = self.create_publisher(JointState, '/joint_command', 10)
         self.grip_pub = self.create_publisher(Float64, '/gripper/command', 10)
         self.reset_cli = self.create_client(Trigger, '/sim/reset')
         self.kill_cli = self.create_client(Trigger, '/sim/drone_kill')
         self.param_cli = self.create_client(SetParameters, '/ocean_sim2sim_scene/set_parameters')
-        self.contact_t = -1.0
-
-    def _on_js(self, m):
-        self.q.update(zip(m.name, m.position))
-        self.js_t = m.header.stamp.sec + m.header.stamp.nanosec * 1e-9
-
-    def _on_grip(self, m):
-        self.q['rh_r1_joint'] = m.position[0] * self.dc['gripper_upper'] / self.dc['gripper_raw_max']
-
-    def _on_contacts(self, m):
-        # one contact sensor per drone link (body, rotor0..3) on the same topic: merge the messages of one sim step
-        t = m.header.stamp.sec + m.header.stamp.nanosec * 1e-9
-        if self.contacts is not None and t == self.contact_t:
-            self.contacts.contacts.extend(m.contacts)
-        else:
-            self.contacts = m
-            self.contact_t = t
 
     # ------------------------------------------------------------------ setup
     def setup(self):
         a = self.args
         t0 = time.time()
-        while rclpy.ok() and (self.urdf is None or 'rh_r1_joint' not in self.q or self.js_t < 0 or self.boat is None
-                              or self.arm_pub.get_subscription_count() == 0 or not self.reset_cli.service_is_ready()
-                              or self.drone is None):           # scene spawns the first drone (~8 s sim)
+        while rclpy.ok():                                       # scene spawns the first drone (~8 s sim)
+            miss = dict(self.observation_missing(), interface=self.arm_pub.get_subscription_count() == 0,
+                        scene=not self.reset_cli.service_is_ready())
+            if not any(miss.values()):
+                break
             if time.time() - t0 > 90:
-                miss = {'robot_description': self.urdf is None, 'gripper state': 'rh_r1_joint' not in self.q,
-                        'joint states': self.js_t < 0, 'boat odometry': self.boat is None,
-                        'interface': self.arm_pub.get_subscription_count() == 0,
-                        'scene': not self.reset_cli.service_is_ready(), 'drone odometry': self.drone is None}
                 raise RuntimeError(f'not ready within 90 s: {[k for k, v in miss.items() if v]}')
             time.sleep(0.1)
-        self.chain = Chain(self.urdf, a.base_link, a.tcp_link)
-        self.arm = self.chain.joints
-        self.boat_to_base = Chain(self.urdf, a.boat_link, a.base_link).fk(np.zeros(0))
+        self.setup_kinematics(a.base_link, a.tcp_link, a.boat_link)
         x_g = np.asarray(self.dc['tool_x_in_drone'], dtype=float)
         z_g = np.array([0.0, 0.0, 1.0])
         self.R_dg = np.column_stack([x_g, np.cross(z_g, x_g), z_g])     # gripper axes in the drone frame
@@ -148,40 +102,6 @@ class Demo(Node):
                 raise RuntimeError(f'service {cli.srv_name} timed out')
             time.sleep(0.01)
         return fut.result()
-
-    # ------------------------------------------------------------------ state
-    def now(self):
-        return self.get_clock().now().nanoseconds * 1e-9
-
-    def q_arm(self):
-        return np.array([self.q[j] for j in self.arm])
-
-    def base_world(self):
-        return pose_matrix(self.boat.pose.pose) @ self.boat_to_base
-
-    def tcp_world(self):
-        T = self.base_world() @ self.chain.fk(self.q_arm())
-        return T[:3, 3], T[:3, :3]
-
-    def drone_world(self):
-        T = pose_matrix(self.drone.pose.pose)
-        return T[:3, 3], T[:3, :3]
-
-    def finger_forces(self):
-        """Net force [N] per robot link from the drone contact sensor (as Isaac Sim: norm of the summed force per link)."""
-        if self.contacts is None or self.now() - self.contact_t > 0.05:
-            return {}
-        f = {}
-        for ct in self.contacts.contacts:
-            c1, c2 = ct.collision1.name, ct.collision2.name
-            drone_first = c1.startswith('drone::')
-            other = c2 if drone_first else c1
-            key = next((ln for ln in FINGER_LINKS if ln in other), other.split('::')[1] if '::' in other else other)
-            for w in ct.wrenches:
-                v = w.body_1_wrench.force
-                vec = np.array([v.x, v.y, v.z]) * (-1.0 if drone_first else 1.0)     # force on the robot link
-                f[key] = f.get(key, np.zeros(3)) + vec
-        return {k: float(np.linalg.norm(v)) for k, v in f.items()}
 
     # ------------------------------------------------------------------ commands
     def send_arm(self, q):
@@ -232,10 +152,7 @@ class Episode:
         while rclpy.ok() and n.now() < self.next_tick:
             time.sleep(0.0005)
         self.next_tick += self.dt
-        if n.px4 is not None:
-            self.armed = bool(n.px4.get('armed'))
-        elif n.drone_state == 'detached' and self.armed and self.t_kill is not None:
-            self.armed = False
+        self.armed = n.drone_armed(self.armed, self.t_kill is not None)
         o = self.observe()
         self.judge.update(o)
         if control is not None:
@@ -257,19 +174,13 @@ class Episode:
 
     def observe(self):
         n = self.n
-        f = n.finger_forces()
+        self.js_age_max = max(getattr(self, 'js_age_max', 0.0), n.now() - n.js_t)
+        o, f = n.judge_observation(n.grip_raw > 0.5 * self.dc['gripper_raw_max'], self.armed)
         for k, v in f.items():
             if v > 1.0:
                 ph = self.link_force_max.setdefault(self.phase, {})
                 ph[k] = max(ph.get(k, 0.0), v)
-        right = f.get('rh_p12_rn_r1', 0.0) + f.get('rh_p12_rn_r2', 0.0)
-        left = f.get('rh_p12_rn_l1', 0.0) + f.get('rh_p12_rn_l2', 0.0)
-        other = float(sum(v for k, v in f.items() if k not in FINGER_LINKS))
-        self.js_age_max = max(getattr(self, 'js_age_max', 0.0), n.now() - n.js_t)
-        tp, tR = n.tcp_world()
-        dp, dR = n.drone_world()
-        return dict(t=n.now(), grip_q=float(n.q['rh_r1_joint']), grip_closing=n.grip_raw > 0.5 * self.dc['gripper_raw_max'],
-                    armed=self.armed, f_right=right, f_left=left, f_other=other, drone_p=dp, drone_R=dR, tcp_p=tp, tcp_R=tR)
+        return o
 
     def wait(self, sec, until=None):
         t_end = self.n.now() + sec

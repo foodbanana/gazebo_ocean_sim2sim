@@ -1,0 +1,75 @@
+# =============================================================
+# policy_client.yaml - openpi policy client for the Gazebo ocean sim (scripts/policy_client_node.py, policy_eval.py,
+# docs/policy.md). Values = Isaac Sim data_collection_ur5_gripper policy/policy_client.yaml (2026-10-27) unless marked NEW.
+#
+# Every key is required: the client stops with an error when one is missing (no defaults in code, as Isaac).
+# =============================================================
+
+server:
+  host: localhost             # where openpi scripts/serve_policy.py runs (--host / --port override)
+  port: 8000
+
+prompt: "pick up the drone"   # = training dataset task (--prompt overrides)
+
+# dataset 25 Hz = one action chunk step
+control_hz: 25.0
+# step of the current chunk (10 steps = 0.4 s) at which the next inference starts in the background (the current chunk
+# keeps running). Inference ~0.19 s (~5 steps): with 4 the next chunk arrives around step 9. If late, the last step is held
+replan_steps: 4
+# /joint_command rate (sim time), linear interpolation between chunk steps. Teleop 60 Hz (the Gazebo interface applies
+# the newest command once per 30 Hz loop and interpolates 33 ms, as Isaac Sim)
+publish_hz: 60.0
+
+# observation (sim time). t_obs = the oldest of the latest camera stamps (and of the latest /base/imu stamp when base_imu
+# is on); joints, gripper and the other cameras = latest at or before t_obs. Error when one is older than this
+# (stage1 --max-age)
+obs_max_age: 0.066
+
+gripper:
+  threshold: 0.5              # policy output > threshold -> close (dataset action[6] is {0, 1})
+  raw_open: 0.0               # /gripper/command values (inverse of dataset goal / 1150)
+  raw_close: 1150.0
+  present_scale: 1150.0       # state[6] = /gripper/joint_states present / 1150
+
+# safety (teleop values and reasons, Isaac teleop/xr_teleop.yaml)
+max_joint_speed: 1.5          # [rad/s] max speed of the sent joint target (sim joints max pi rad/s)
+max_lead: 0.08                # [rad] max joint target lead over the measured joint (protective stop tracking error 5 deg = 0.087)
+limit_margin: 0.05            # [rad] inside the URDF joint limits
+desync: 0.2                   # [rad] stop when a measured joint differs this much from the sent target (reset jump, protective stop)
+
+# NEW: arm joint order of state[0:6] / action[0:6] and of /joint_command (Isaac: teleop/ik_model.py ARM_JOINTS).
+# Limits = <limit> of these joints in /robot_description (the arm stays replaceable)
+arm_joints: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint]
+
+# NEW: policy observation key -> image topic (sensor_msgs/Image rgb8, sent as HxWx3 uint8 as received).
+# Gazebo has the wrist camera only (no third view). A camera listed here that the sim does not publish is an error.
+#   Isaac 2-camera checkpoints (pi05_ur5 first13) also need observation/base_image (third view, /cam/third_view/...)
+cameras:
+  observation/wrist_image: /cam/wrist/color/image_raw
+
+# NEW: observation keys sent as a black image [height, width] (no topic). Only for a plumbing test of a checkpoint that
+# needs a camera the sim does not have (e.g. {observation/base_image: [480, 640]} with the 2-camera checkpoint): the
+# policy then sees a different input than in training, results mean nothing. Off ({}) by default
+blank_images: {}
+
+# NEW: moving base IMU (Isaac moving_base_architecture.md [4], planned). Same rule as Isaac stage1
+# lerobot_stage1_extract_bag.py --base-imu topic: mean of the 6 values [angular_velocity xyz rad/s,
+# linear_acceleration xyz m/s^2 (specific force, +9.81 up at rest)] of the messages with header stamp in
+# (t_obs - window, t_obs]; no message in the window -> error
+base_imu:
+  enabled: false
+  topic: /base/imu
+  window: 0.040               # [s] = 1 / dataset fps (25 Hz)
+  mode: key                   # key: obs[key] = (6,) float32 | state: observation/state = 7 state values + 6 IMU (13,)
+  key: observation/base_imu
+
+topics:
+  clock: /clock
+  joint_states: /joint_states
+  gripper_state: /gripper/joint_states
+  protective_stop: /protective_stop
+  joint_command: /joint_command
+  gripper_command: /gripper/command
+  reset_service: /sim/reset
+  kill_service: /sim/drone_kill
+  robot_description: /robot_description    # NEW: joint limits (latched, robot_state_publisher)

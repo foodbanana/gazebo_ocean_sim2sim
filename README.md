@@ -15,6 +15,7 @@ VRX is used as a dependency and is not modified.
 | `ocean_sim2sim_description` | WAM-V (VRX hull, hydrodynamics, 2 aft thrusters, IMU) with a pluggable robot arm on the deck |
 | `ocean_sim2sim_interface` | Isaac Sim / real-robot topics on top of ros2_control (`/joint_command`, `/gripper/command`, `/joint_states`, `/gripper/joint_states`) and the episode scene (drone, `/sim/*` services) |
 | `ocean_sim2sim_bringup` | One launch file: ocean + WAM-V with the arm + controllers + interface node |
+| `ocean_sim2sim_policy` | openpi policy client (port of the Isaac Sim client: observation pairing, 25 Hz action chunks at 60 Hz, safety limits) and a judged policy evaluation runner ([`docs/policy.md`](docs/policy.md)) |
 | `ocean_sim2sim_gz_plugins` | Gazebo systems: `ContactMonitor` (per-link contact forces of the arm for the protective stop, [`docs/interface.md`](docs/interface.md) 8) |
 
 ## Requirements
@@ -35,6 +36,9 @@ cd ~/vrx_ws
 # Python venv (ROS 2 docs "Using Python Packages with ROS 2"): sees the system / ROS packages, adds pymavlink only
 python3 -m venv --system-site-packages .venv && touch .venv/COLCON_IGNORE
 .venv/bin/python -m pip install pymavlink==2.4.50 fastcrc==0.5.0     # same versions as the Isaac Sim project
+# openpi policy client (ocean_sim2sim_policy): websocket client only, no JAX / GPU. Or your fork / a local clone
+# (pip install -e ~/openpi/packages/openpi-client). numpy < 2 is satisfied by the system numpy (not replaced)
+.venv/bin/python -m pip install "openpi-client @ git+https://github.com/Physical-Intelligence/openpi.git#subdirectory=packages/openpi-client"
 source /opt/ros/jazzy/setup.bash
 source .venv/bin/activate          # in every terminal that builds or launches (deactivate: `deactivate`)
 colcon build --merge-install --symlink-install
@@ -98,6 +102,18 @@ ros2 topic pub --once /joint_command sensor_msgs/msg/JointState \
   "{name: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint],
     position: [0.3, -1.5708, 1.5708, -1.5708, -1.5708, 0.0]}"
 ros2 topic pub --once /gripper/command std_msgs/msg/Float64 "{data: 1150.0}"   # raw 0 (open) ~ 1150 (closed)
+```
+
+## Policy inference and evaluation
+
+An openpi policy server ([openpi](https://github.com/Physical-Intelligence/openpi) `scripts/serve_policy.py`, not part of this
+repository) drives the arm through the same topics as teleop; the evaluation runner resets, runs the policy, stops the drone
+motors (`--auto-kill` or the operator) and judges each episode like the grasp demo ([`docs/policy.md`](docs/policy.md)):
+
+```bash
+ros2 run ocean_sim2sim_policy policy_eval.py --episodes 10 --duration 30 [--auto-kill 1.0]    # report: ~/ocean_sim2sim_reports/policy_eval_<time>/
+ros2 run ocean_sim2sim_policy policy_client_node.py --reset --episodes 5 --duration 30       # client only (as Isaac Sim)
+ros2 run ocean_sim2sim_policy fake_policy_server.py                                           # plumbing test without a model
 ```
 
 ## Wrist camera
