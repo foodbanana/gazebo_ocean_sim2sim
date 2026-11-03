@@ -145,6 +145,14 @@ def build(c):
       <detach_topic>/drone/detach</detach_topic>
       <output_topic>/drone/state</output_topic>
     </plugin>
+    <!-- PX4 drone: lockstep with the bridge node (ocean_sim2sim_drone px4_bridge_node), rotor wrench at 120 Hz.
+         Idle (no force) while no bridge is connected: the drone just hangs on its anchor (docs/drone_px4.md) -->
+    <plugin filename="OceanSim2simDroneLockstep" name="ocean_sim2sim::DroneLockstep">
+      <link_name>body</link_name>
+      <port>4570</port>
+      <rate>120</rate>
+      <timeout>10</timeout>
+    </plugin>
     <!-- drone body pose (world) for the grasp demo / judge -->
     <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">
       <odom_frame>world</odom_frame>
