@@ -33,6 +33,35 @@ ocean_sim2sim_interface:
       target_topic: /gripper/target
       trajectory_topic: /gripper_controller/joint_trajectory
 
+    # UR-style protective stop (docs/interface.md 8). Same rules and thresholds as Isaac Sim
+    # (data_collection_ur5_gripper isaacsim/config/ros2_iface.yaml protective_stop, isaacsim/scripts/protective_stop.py,
+    # docs/PLAN.md 3-7). Checked on every physics step; any limit exceeded -> the arm is held at its measured position,
+    # /joint_command is ignored (gripper still works), /protective_stop (std_msgs/Bool) true on every loop tick.
+    # Cleared only by /sim/reset (interface hold true at its start).
+    protective_stop:
+      enabled: true
+      mode: "on"                       # "on" = stop | "measure" = never stop, log maxima only (Isaac --protective-stop measure)
+      topic: /protective_stop
+      contacts_topic: /sim/robot_contacts                    # ContactMonitor plugin (ur5_rh_p12.gazebo.xacro) via ros_gz_bridge
+      controller_state_topic: /arm_controller/controller_state   # JTC: error = interpolated target - measured
+      contact_force_n: 150.0           # [N] link contact force (Isaac: UR example force limit 150 N).
+                                       #   Non-finger links: all contacts (boat, drone, robot itself) = total_N.
+                                       #   Finger links: environment only (env_N: boat + anything not the drone), so
+                                       #   squeezing the drone or the fingers touching each other never trips it.
+                                       #   Gazebo: sum of contact-pair force magnitudes (>= the PhysX net force of Isaac
+                                       #   when forces from several sides cancel; equal with one touching pair)
+      tracking_error_deg: 5.0          # [deg] |interpolated target - measured| of an arm joint (Isaac: UR value not
+                                       #   published; normal max measured in Isaac 2.9 deg near max speed, table hit 47.7)
+      joint_speed_dps: 200.0           # [deg/s] arm joint speed from joint angle differences (Isaac: above the drive
+                                       #   max speed 180 deg/s = URDF pi rad/s, so only an impact exceeds it)
+      finger_links: [rh_p12_rn_r1, rh_p12_rn_r2, rh_p12_rn_l1, rh_p12_rn_l2]   # Isaac finger_links (revolute: same SDF names)
+      # SDF link names the ContactMonitor reports (after URDF -> SDF fixed-joint lumping: wrist_3_link carries the wrist
+      # mount, gripper bracket, gripper base and wrist camera; the arm base / robot_mount is part of the boat link).
+      # Must match robot_link_regex of the plugin (a contact on another link is an error).
+      robot_links: [shoulder_link, upper_arm_link, forearm_link, wrist_1_link, wrist_2_link, wrist_3_link,
+                    rh_p12_rn_l1, rh_p12_rn_l2, rh_p12_rn_r1, rh_p12_rn_r2]
+      contact_max_age: 0.05            # [s sim] warn when a joint state comes with no contact message this recent
+
 # Episode scene (scene_node): the drone to grasp. Same drone position as Isaac Sim (scene_drone.yaml drone_pos,
 # robot base frame = world - table top 0.762): the under_drone start pose sees it at the wrist image centre.
 ocean_sim2sim_scene:

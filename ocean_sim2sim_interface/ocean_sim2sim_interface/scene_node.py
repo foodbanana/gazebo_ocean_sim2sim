@@ -41,7 +41,8 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from builtin_interfaces.msg import Duration
 from ros_gz_interfaces.msg import Entity
 from ros_gz_interfaces.srv import DeleteEntity, SpawnEntity
-from std_msgs.msg import Empty, String
+from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool, Empty, String
 from std_srvs.srv import SetBool, Trigger
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from nav_msgs.msg import Odometry
@@ -122,6 +123,10 @@ class SceneNode(Node):
             raise RuntimeError(f'init_pose has {len(self.init_pose)} values for {len(self.arm_joints)} arm joints')
         self.gripper_joint = str(p('gripper_joint', 'rh_r1_joint').value)
         self.reset_arm_time = float(p('reset_arm_time', 2.0).value)
+        # After a protective stop the arm may be pressed against the boat: moving straight to init_pose can drag it
+        # along the deck and stop short (Isaac Sim teleports the arm, Gazebo cannot). Then go via this pose first.
+        self.escape_pose = [float(v) for v in p('reset_escape_pose', [0.0, -1.5708, 1.5708, -1.5708, -1.5708, 0.0]).value]
+        self.reset_arrive_tol = float(p('reset_arrive_tol', 0.02).value)     # [rad] arm must reach init_pose
         # open = this far inside the lower limit: a joint driven exactly onto its limit gets stuck in DART (interface
         # gripper.command_margin)
         self.gripper_open = float(p('gripper_open', 0.001).value)
@@ -162,6 +167,12 @@ class SceneNode(Node):
 
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(String, '/robot_description', self._on_description, latched)
+        # arm state for the reset: protective stop (go via the escape pose first) and arrival check
+        self.q_arm, self.protective_stop = {}, False
+        self.create_subscription(JointState, '/joint_states', lambda m: self.q_arm.update(zip(m.name, m.position)), 10,
+                                 callback_group=self.cb)
+        self.create_subscription(Bool, '/protective_stop', lambda m: setattr(self, 'protective_stop', m.data), 10,
+                                 callback_group=self.cb)
         self.create_subscription(Odometry, '/sim/boat_odometry', self._on_boat_odometry, 10)
         self.create_subscription(String, '/drone/state', self._on_drone_state, 10)
         self.pub_detach = self.create_publisher(Empty, '/drone/detach', 10)
@@ -381,6 +392,7 @@ class SceneNode(Node):
         phases, t = {}, t0
         k = self.reset_count
         try:
+            was_stopped = self.protective_stop     # read before the hold: the hold releases the protective stop
             self._hold(True)
             # 2. remove the drone (and anchor). Detach FIRST and wait until Gazebo has done it: removing the
             #    drone while its DetachableJoint still holds it crashed Gazebo (DART WeldJointConstraint on a
@@ -401,9 +413,16 @@ class SceneNode(Node):
             self.attached = None
             phases['remove_drone'], t = self.now() - t, self.now()
             # 3. arm to the start pose, gripper open
+            if was_stopped:
+                self._move_joints(self.pub_arm, self.arm_joints, self.escape_pose, self.reset_arm_time)
+                self.wait_sim(self.reset_arm_time + 0.3)
             self._move_joints(self.pub_arm, self.arm_joints, self.init_pose, self.reset_arm_time)
             self._move_joints(self.pub_grip, [self.gripper_joint], [self.gripper_open], self.reset_arm_time)
             self.wait_sim(self.reset_arm_time + 0.3)
+            off = {j: round(self.q_arm[j] - q, 4) for j, q in zip(self.arm_joints, self.init_pose)
+                   if j in self.q_arm and abs(self.q_arm[j] - q) > self.reset_arrive_tol}
+            if off or not self.q_arm:
+                raise RuntimeError(f'arm did not reach init_pose (rad off: {off or "no /joint_states"})')
             phases['arm_to_start'], t = self.now() - t, self.now()
             # 4. new hover position, 5. spawn
             name, target, offset = self.next_target(k)

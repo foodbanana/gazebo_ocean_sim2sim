@@ -13,6 +13,7 @@
   <exec_depend>xacro</exec_depend>
   <exec_depend>ur_description</exec_depend>
   <exec_depend>realsense2_description</exec_depend>
+  <exec_depend>ocean_sim2sim_gz_plugins</exec_depend>  <!-- ContactMonitor in ur5_rh_p12.gazebo.xacro -->
   <!-- controllers in config/ros2_controllers.yaml -->
   <exec_depend>joint_state_broadcaster</exec_depend>
   <exec_depend>joint_trajectory_controller</exec_depend>

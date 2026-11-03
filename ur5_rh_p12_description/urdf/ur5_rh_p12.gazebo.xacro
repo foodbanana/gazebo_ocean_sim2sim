@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 <!--
-  Gazebo-only parts of the UR5 + RH-P12-RN arm: wrist D435i color camera, finger friction.
+  Gazebo-only parts of the UR5 + RH-P12-RN arm: wrist D435i color camera, finger friction, contact monitor
+  (per-link contact forces for the protective stop).
 
   Same as the Isaac Sim wrist camera (data_collection_ur5_gripper isaacsim/config/wrist_camera.yaml,
   real D435i camera_info 640x480, 2026-09-30):
@@ -68,5 +69,26 @@
       </camera>
     </sensor>
   </gazebo>
+
+  <!-- Contact monitor (ocean_sim2sim_gz_plugins ContactMonitor, docs/interface.md "보호 정지"): per robot link the contact
+       force magnitudes from the environment / the robot itself / the drone, every physics step on a gz topic (JSON),
+       bridged to ROS for the protective stop of ocean_sim2sim_interface. Model-level plugin: it monitors the links of
+       the model the arm is part of (here the boat) whose SDF names match robot_link_regex; every other link of that
+       model (the boat, and the arm base / robot_mount, lumped into the boat link by URDF -> SDF) counts as environment.
+       SDF link names of this arm after fixed-joint lumping: shoulder_link, upper_arm_link, forearm_link, wrist_1_link,
+       wrist_2_link, wrist_3_link (+ wrist mount, gripper bracket, gripper base, wrist camera), rh_p12_rn_l1, _l2, _r1, _r2.
+       contact_monitor_topic empty = no monitor. -->
+  <xacro:arg name="contact_monitor_topic" default="/sim/robot_contacts"/>
+  <xacro:arg name="contact_monitor_drone_regex" default="drone"/>
+  <xacro:if value="${'$(arg contact_monitor_topic)' != ''}">
+    <gazebo>
+      <plugin filename="OceanSim2simContactMonitor" name="ocean_sim2sim::ContactMonitor">
+        <robot_link_regex>shoulder_link|upper_arm_link|forearm_link|wrist_[123]_link|rh_p12_rn_[lr][12]</robot_link_regex>
+        <drone_model_regex>$(arg contact_monitor_drone_regex)</drone_model_regex>
+        <topic>$(arg contact_monitor_topic)</topic>
+        <min_force>0.01</min_force>
+      </plugin>
+    </gazebo>
+  </xacro:if>
 
 </robot>

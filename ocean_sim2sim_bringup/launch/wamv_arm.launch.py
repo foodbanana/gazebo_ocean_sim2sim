@@ -8,9 +8,10 @@
 #   2. ocean_sim2sim_gazebo/empty_ocean.launch.py: world + spawn the boat at the origin + VRX bridges
 #   3. robot_state_publisher (gz_ros2_control reads robot_description from it)
 #   4. controller spawner: joint_state_broadcaster, arm_state_broadcaster, arm_controller, gripper_controller
-#   5. ocean_sim2sim_interface: Isaac Sim / real-robot topics (/joint_command, /gripper/*).
+#   5. ocean_sim2sim_interface: Isaac Sim / real-robot topics (/joint_command, /gripper/*, /protective_stop).
 #   6. ros_gz_bridge for the arm sensors (wrist camera -> /cam/wrist/color/*).
-#   7. scene_node (drone to grasp, /sim/drone_kill, /sim/reset) + its Gazebo bridges.
+#   7. scene_node (drone to grasp, /sim/drone_kill, /sim/reset) + its Gazebo bridges (also /sim/robot_contacts for the
+#      protective stop).
 #      It exits on an invalid command -> the whole launch shuts down (no silent fallback).
 
 import os
@@ -115,6 +116,8 @@ def launch(context, *args, **kwargs):
                    # evaluation only (grasp judge), not policy inputs
                    '/drone/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
                    '/drone/contacts@ros_gz_interfaces/msg/Contacts[gz.msgs.Contacts',
+                   # per robot link contact forces (ContactMonitor plugin, JSON) -> protective stop of the interface
+                   '/sim/robot_contacts@std_msgs/msg/String[gz.msgs.StringMsg',
                    # boat IMU (stock VRX WAM-V IMU: pose, 100 Hz, noise) -> /base/imu (Isaac Sim moving-base topic)
                    f'{imu_gz}@sensor_msgs/msg/Imu[gz.msgs.IMU'],
         remappings=[('/model/wamv/odometry', '/sim/boat_odometry'), (imu_gz, '/base/imu')],

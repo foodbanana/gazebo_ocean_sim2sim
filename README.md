@@ -15,6 +15,7 @@ VRX is used as a dependency and is not modified.
 | `ocean_sim2sim_description` | WAM-V (VRX hull, hydrodynamics, 2 aft thrusters, IMU) with a pluggable robot arm on the deck |
 | `ocean_sim2sim_interface` | Isaac Sim / real-robot topics on top of ros2_control (`/joint_command`, `/gripper/command`, `/joint_states`, `/gripper/joint_states`) and the episode scene (drone, `/sim/*` services) |
 | `ocean_sim2sim_bringup` | One launch file: ocean + WAM-V with the arm + controllers + interface node |
+| `ocean_sim2sim_gz_plugins` | Gazebo systems: `ContactMonitor` (per-link contact forces of the arm for the protective stop, [`docs/interface.md`](docs/interface.md) 8) |
 
 ## Requirements
 
