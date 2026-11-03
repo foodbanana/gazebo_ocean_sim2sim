@@ -1,0 +1,96 @@
+# =============================================================
+# drone_px4.yaml - PX4 SITL link, virtual sensors, offboard commander, hover presets (scripts/px4_bridge_node.py)
+#
+# Ported from the Isaac Sim project data_collection_ur5_gripper (same values, sim2sim gap study = same inputs):
+#   isaacsim/config/px4_sitl.yaml   ports, lockstep_timeout, position source mocap (sensors + EKF2 params), commander,
+#                                   sensors (Pegasus Simulator defaults = PX4 sitl_gazebo, pegasus_compat false)
+#   isaacsim/config/drone_iris.yaml flight.hover_presets
+#   isaacsim/config/scene_drone.yaml px4.ekf_wait, px4.connect_timeout
+# Airframe values (rotors, thrust model, px4 motor mapping, rate gain scaling, motor lag) are NOT here: they come from
+#   ocean_sim2sim_gazebo models/iris_075/meshes/collision_isaac/isaac_flight.yaml (exported from Isaac Sim).
+# PX4 itself: PX4-Autopilot v1.16.0, `make px4_sitl_default none`; its directory is the node parameter px4_dir.
+# Only position_source mocap is ported (gps / flow sources of px4_sitl.yaml are dropped).
+# =============================================================
+
+autolaunch: true          # px4_sitl.yaml: true = the bridge starts / stops PX4. false = attach to a PX4 started elsewhere
+instance: 0               # px4_sitl.yaml: PX4 -i (ports = base port + instance)
+sim_port: 4560            # px4_sitl.yaml: TCP, simulator = server (PX4 simulator_mavlink connects)
+offboard_port: 14540      # px4_sitl.yaml: UDP, PX4 offboard API link (commander.PX4Commander)
+command_port: 14600       # px4_sitl.yaml: UDP localhost, drone_cmd.py CLI -> PX4Commander (goto, hold, land, kill, status)
+plugin_port: 4570         # Gazebo only: TCP localhost, DroneLockstep plugin (client) <-> bridge node (server)
+lockstep_timeout: 10.0    # px4_sitl.yaml: s wall clock, error if PX4 sends no motor command for this long after the first
+physics_dt: 0.008333333333333333   # 1/120 s = Isaac Sim physics step (--physics-hz 120) = one plugin exchange = one PX4 lockstep step
+ekf_wait: 5.0             # scene_drone.yaml px4.ekf_wait: s sim, wait after the PX4 link is up before arming (EKF init)
+connect_timeout: 60.0     # scene_drone.yaml px4.connect_timeout: s sim, PX4 boot until lockstep + offboard link
+arm_timeout: 30.0         # s sim, arm service: until PX4 reports armed + OFFBOARD (Gazebo only; Isaac waited within
+                          #   connect_timeout + leg_timeout of its take-off leg; arming took about 1.5 s there)
+stall_timeout: 10.0       # s wall clock, services fail if sim time does not advance (Gazebo paused / plugin not connected)
+state_rate: 10.0          # Hz sim, /drone/px4/state
+
+# px4_sitl.yaml position_sources.mocap (decision 2026-10-02: indoor motion capture gives the position)
+#   EKF2 external vision for horizontal + vertical position + yaw (mag, GPS, flow, range off), delay = sensor latency
+position_source: mocap
+position_sources:
+  mocap:
+    gps: false
+    rangefinder: false
+    optical_flow: false
+    mocap: true
+    params:
+      EKF2_GPS_CTRL: 0
+      EKF2_OF_CTRL: 0
+      EKF2_RNG_CTRL: 0
+      EKF2_EV_CTRL: 11          # bits: 1 horizontal position, 2 vertical position, 4 velocity, 8 yaw
+      EKF2_HGT_REF: 3           # height reference = external vision
+      EKF2_EV_NOISE_MD: 1       # noise = the parameters below (no variance in the message)
+      EKF2_EVP_NOISE: 0.01      # m
+      EKF2_EVA_NOISE: 0.05      # rad
+      EKF2_EV_DELAY: 20         # ms = sensors.mocap.latency
+      EKF2_MAG_TYPE: 5          # magnetometer unused (indoor, yaw from external vision)
+
+# px4_sitl.yaml commander
+commander:
+  setpoint_hz: 20.0       # Offboard position target rate (sim time). PX4 keeps Offboard above 2 Hz
+  retry_sec: 1.0          # mode / arm re-request period (sim time)
+  # offboard link streams switched off once connected (MAV_CMD_SET_MESSAGE_INTERVAL -1); the commander only uses
+  # HEARTBEAT, LOCAL_POSITION_NED, ATTITUDE, EXTENDED_SYS_STATE, STATUSTEXT, COMMAND_ACK
+  disable_streams: [HIGHRES_IMU, ATTITUDE_QUATERNION, ODOMETRY]
+
+# px4_sitl.yaml sensors (Pegasus Simulator defaults, livealive7/PegasusSimulator b1256ca logic/sensors/*.py = PX4 sitl_gazebo)
+sensors:
+  pegasus_compat: false   # false: PX4 sitl_gazebo equations (Pegasus bugs fixed, ocean_sim2sim_drone/sensors.py header)
+  origin_lat_lon_alt: [38.736832, -9.137977, 90.0]     # world origin lat / lon / alt (Pegasus configs.yaml default, Lisbon)
+  imu:
+    update_rate: 250.0    # Hz; at 120 Hz physics this is every step
+    gyroscope: {noise_density: 3.393695767766752e-4, random_walk: 3.878509448876288e-5, bias_correlation_time: 1000.0}
+    accelerometer: {noise_density: 4.0e-3, random_walk: 6.0e-3, bias_correlation_time: 300.0}
+  barometer:
+    update_rate: 250.0
+    drift_pa_per_sec: 0.0
+  magnetometer:
+    update_rate: 250.0
+    noise_density: 4.0e-4          # gauss / sqrt(Hz)
+    random_walk: 6.4e-6            # gauss * sqrt(Hz)
+    bias_correlation_time: 600.0
+  # motion capture (Vicon / OptiTrack class, assumed). world body position / attitude -> VISION_POSITION_ESTIMATE
+  mocap:
+    update_rate: 100.0             # Hz; rounded to physics steps (at 120 Hz: every step, as in Isaac)
+    latency: 0.02                  # s (= EKF2_EV_DELAY), rounded to physics steps (2 steps at 120 Hz)
+    position_noise_std: 0.001      # m
+    angle_noise_std: 0.005         # rad (about 0.3 deg)
+
+# drone_iris.yaml flight.hover_presets: hover mode = target + per-axis sum of n_sines sines, amplitude / n_sines each
+#   (sum max = amplitude), frequencies uniform in freq_range, phases 0..2 pi, drawn from the seed. max speed ~ 2 pi f_max A
+hover_presets:
+  small:                                     # fast jitter, max about 6 cm/s
+    amplitude: [0.02, 0.02, 0.01]            # m
+    freq_range: [0.2, 0.5]                   # Hz
+    n_sines: 2
+  mid:                                       # slower and larger, max about 6 cm/s
+    amplitude: [0.03, 0.03, 0.015]
+    freq_range: [0.05, 0.3]
+    n_sines: 2
+  big:                                       # max about 9 cm/s
+    amplitude: [0.05, 0.05, 0.02]
+    freq_range: [0.05, 0.3]
+    n_sines: 2

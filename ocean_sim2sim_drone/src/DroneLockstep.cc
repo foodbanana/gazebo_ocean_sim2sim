@@ -28,6 +28,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -84,19 +85,21 @@ public:
       this->Connect();
       this->nextConnectTry = t + 0.5;
       if (this->fd >= 0)
-        this->nextExchange = t;     // exchange at once
+        this->stepsLeft = 0;        // exchange at once
     }
-    if (this->fd >= 0 && t + 1e-9 >= this->nextExchange)
+    // count physics steps (Gazebo time is integer ns: 1/240 s does not add up to exactly 1/120 s, comparing times
+    // skipped an exchange now and then -> 12.5 ms instead of 8.33 ms)
+    if (this->fd >= 0 && this->stepsLeft <= 0)
     {
-      this->nextExchange += this->period;
-      if (this->nextExchange <= t)  // fell behind (e.g. connected late): stay on the grid from now
-        this->nextExchange = t + this->period;
+      this->stepsLeft = std::max(1L, std::lround(this->period / dt));
       if (!this->Exchange(_ecm, t, dt))
       {
         this->Close();
         this->wrench.fill(0.0);
       }
     }
+    if (this->fd >= 0)
+      --this->stepsLeft;
     if (this->fd >= 0)
       this->link.AddWorldWrench(_ecm, gz::math::Vector3d(this->wrench[0], this->wrench[1], this->wrench[2]),
                                 gz::math::Vector3d(this->wrench[3], this->wrench[4], this->wrench[5]));
@@ -209,7 +212,7 @@ private:
   double timeout{10.0};
   int fd{-1};
   double nextConnectTry{0.0};
-  double nextExchange{0.0};
+  long stepsLeft{0};
   std::array<double, 6> wrench{};
 };
 }  // namespace ocean_sim2sim

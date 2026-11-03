@@ -18,8 +18,11 @@ install(TARGETS OceanSim2simDroneLockstep DESTINATION lib)
 ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/drone_link_test.py
+  scripts/px4_bridge_node.py
+  scripts/drone_cmd.py
   DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+install(FILES ${PROJECT_NAME}/LICENSE.PegasusSimulator DESTINATION share/${PROJECT_NAME})
 
 # plugin found by Gazebo through GZ_SIM_SYSTEM_PLUGIN_PATH
 ament_environment_hooks("${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/${PROJECT_NAME}.dsv.in")
