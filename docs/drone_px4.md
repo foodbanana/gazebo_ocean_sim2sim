@@ -81,7 +81,12 @@ python3 src/gazebo_ocean_sim2sim/ocean_sim2sim_drone/scripts/drone_cmd.py status
 
 VRX 기본 WAM-V IMU 그대로 (사용자 결정 2026-11-03): `wamv/base_link` 기준 (0.3, −0.2, 1.3), 100 Hz, VRX 잡음 (자이로 0.009 rad/s 등),
 `sensor_msgs/Imu` 비력 (정지 = +9.81). Isaac Sim 학습 데이터 (`/base/imu` 120 Hz, 잡음 없음, 로봇 base 강체) 와 주기·잡음·위치가 다르다 → gap.
-frame_id 는 Gazebo 이름 (`wamv/wamv/imu_wamv_link/imu_wamv_sensor`, Isaac `imu_link`). `/base/odom` 은 아직 없음.
+frame_id 는 Gazebo 이름 (`wamv/wamv/imu_wamv_link/imu_wamv_sensor`, Isaac `imu_link`).
+
+`/base/odom` (`nav_msgs/Odometry`, Isaac Sim `ros2_iface.yaml` base 와 같은 형식, scene_node): 30 Hz, stamp = sim time 1/30 s 배수,
+frame `odom` = 에피소드 시작 (리셋이 끝난 순간) 의 로봇 base 자세, child `robot_mount` (Isaac Stewart 의 "윗판 가운데 = 로봇 base 자리" 와 같은 뜻),
+위치 R0ᵀ(p − p0), 자세 R0ᵀR, twist 는 child 좌표계. 보트 odometry (50 Hz) 가 올 때마다 지난 1/30 s 시각을 빠짐없이 냄 (직전 값 유지).
+확인: 30.0 Hz, 간격 33.33 ms 고정, 파도에서 상하 71 mm.
 
 ## 6. 해 보고 고친 것
 

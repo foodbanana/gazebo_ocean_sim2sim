@@ -71,6 +71,23 @@ def rpy_to_mat(r, p, y):
             [-sp, cp * sr, cp * cr]]
 
 
+def mat_to_quat(R):
+    """3x3 (nested lists) -> (x, y, z, w)."""
+    tr = R[0][0] + R[1][1] + R[2][2]
+    if tr > 0:
+        k = math.sqrt(tr + 1.0) * 2
+        return ((R[2][1] - R[1][2]) / k, (R[0][2] - R[2][0]) / k, (R[1][0] - R[0][1]) / k, 0.25 * k)
+    i = max(range(3), key=lambda a: R[a][a])
+    j, l = (i + 1) % 3, (i + 2) % 3
+    k = math.sqrt(1.0 + R[i][i] - R[j][j] - R[l][l]) * 2
+    q = [0.0, 0.0, 0.0, 0.0]
+    q[i] = 0.25 * k
+    q[j] = (R[j][i] + R[i][j]) / k
+    q[l] = (R[l][i] + R[i][l]) / k
+    q[3] = (R[l][j] - R[j][l]) / k
+    return tuple(q)
+
+
 def mat_vec(R, v):
     return [sum(R[i][k] * v[k] for k in range(3)) for i in range(3)]
 
@@ -193,6 +210,12 @@ class SceneNode(Node):
                                + ('' if self.use_targets else ' (not used: drone_pos_base)')
                                + f', offset +-{self.drone_offset} m, init_pose {self.init_pose}')
         self.timer = self.create_timer(0.5, self._spawn_when_ready, callback_group=self.cb)
+        # /base/odom (Isaac Sim ros2_iface.yaml base: odom_topic /base/odom, odom_hz 30, odom_frame_id odom)
+        self.base_state, self.odom_origin, self.odom_last_tick = None, None, None
+        self.odom_hz = float(p('odom_hz', 30.0).value)
+        self.odom_frame_id = str(p('odom_frame_id', 'odom').value)
+        self.pub_odom = self.create_publisher(Odometry, str(p('odom_topic', '/base/odom').value), 10)
+
 
     # ---------------------------------------------------------------- inputs
     def _on_description(self, msg):
@@ -209,6 +232,52 @@ class SceneNode(Node):
         yaw = math.atan2(R_base[1][0], R_base[0][0])        # level frame: only the base heading
         t = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
         self.base_hist.append((t, base, yaw))
+        w = msg.twist.twist.angular
+        v = msg.twist.twist.linear
+        # /base/odom ticks (1/odom_hz grid) up to this message, with the boat state of the previous message (at or
+        # before the tick: zero-order hold, boat odometry 50 Hz). Driven by the messages, no timer (none missed)
+        ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
+        k_now = ns * int(self.odom_hz) // 1_000_000_000 if self.odom_hz == int(self.odom_hz) else int(ns * self.odom_hz // 1e9)
+        if self.base_state is not None and self.odom_origin is not None:
+            k0 = k_now if self.odom_last_tick is None else self.odom_last_tick + 1
+            for k in range(max(k0, k_now - 3), k_now + 1):
+                self._publish_odom(k)
+            self.odom_last_tick = k_now
+        self.base_state = (t, base, R_base, R_boat, [v.x, v.y, v.z], [w.x, w.y, w.z])
+
+    # ---------------------------------------------------------------- /base/odom (Isaac Sim moving base topic)
+    def _odom_origin(self):
+        """Episode start = odom origin (Isaac Sim: the base start pose; its base starts moving at the end of the reset)."""
+        if self.base_state is not None:
+            self.odom_origin = (list(self.base_state[1]), [row[:] for row in self.base_state[2]])
+
+    def _publish_odom(self, k):
+        """nav_msgs/Odometry at odom_hz (Isaac ros2_iface.yaml base): frame odom = robot base pose at the episode start,
+        child = robot base (robot_mount, as Isaac's Stewart top plate centre = robot base spot), pose = R0^T (p - p0),
+        R0^T R, twist in the child frame. Pose from the latest boat odometry (50 Hz, zero-order hold), stamp = sim time
+        on a 1/odom_hz multiple."""
+        tick = int(round(k * 1e9 / self.odom_hz))            # stamp = k / odom_hz [ns]
+        _, p, R, R_boat, v_b, w_b = self.base_state
+        p0, R0 = self.odom_origin
+        R0T = [[R0[j][i] for j in range(3)] for i in range(3)]
+        po = mat_vec(R0T, [a - b for a, b in zip(p, p0)])
+        Ro = mat_mul(R0T, R)
+        # boat odometry twist is in the boat body frame -> robot base frame: v_base = R_off^T (v + w x t_off), w_base = R_off^T w
+        R_off, t_off = self.base_offset
+        wxt = [w_b[1] * t_off[2] - w_b[2] * t_off[1], w_b[2] * t_off[0] - w_b[0] * t_off[2], w_b[0] * t_off[1] - w_b[1] * t_off[0]]
+        R_offT = [[R_off[j][i] for j in range(3)] for i in range(3)]
+        vc = mat_vec(R_offT, [a + b for a, b in zip(v_b, wxt)])
+        wc = mat_vec(R_offT, w_b)
+        m = Odometry()
+        m.header.stamp.sec, m.header.stamp.nanosec = int(tick // 1_000_000_000), int(tick % 1_000_000_000)
+        m.header.frame_id, m.child_frame_id = self.odom_frame_id, self.base_link
+        m.pose.pose.position.x, m.pose.pose.position.y, m.pose.pose.position.z = map(float, po)
+        qx, qy, qz, qw = mat_to_quat(Ro)
+        m.pose.pose.orientation.x, m.pose.pose.orientation.y = qx, qy
+        m.pose.pose.orientation.z, m.pose.pose.orientation.w = qz, qw
+        m.twist.twist.linear.x, m.twist.twist.linear.y, m.twist.twist.linear.z = map(float, vc)
+        m.twist.twist.angular.x, m.twist.twist.angular.y, m.twist.twist.angular.z = map(float, wc)
+        self.pub_odom.publish(m)
 
     def _on_drone_state(self, msg):
         self.attached = (msg.data == 'attached')
@@ -322,6 +391,7 @@ class SceneNode(Node):
                 ph = {}
                 px4 = self._px4_start(pos, self.seed + 1_000_000, ph)
                 self.get_logger().info(f'PX4 drone flying: {px4}, phases {ph}')
+            self._odom_origin()
             self.spawned = True           # only now: /sim/reset and /sim/drone_kill are accepted
         finally:
             self.busy = False
@@ -440,6 +510,7 @@ class SceneNode(Node):
             # 6. commands again
             self._hold(False)
             self.reset_count += 1
+            self._odom_origin()           # episode start = odom origin
             info = {'reset_count': self.reset_count, 'seed': self.seed, 'offset_seed': self.seed + k,
                     'drone_target': name, 'drone_target_base': target,
                     'drone_offset': [round(v, 5) for v in offset],
