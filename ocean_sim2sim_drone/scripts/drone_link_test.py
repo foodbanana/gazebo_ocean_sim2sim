@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check of the Gazebo drone plugin (DroneLockstep) without PX4: stands in for the bridge and answers every exchange
-with fixed rotor speeds through the Isaac Sim thrust model (ocean_sim2sim_drone.flight). docs/drone_px4.md
+with fixed rotor speeds through the Isaac Sim thrust model (ocean_sim2sim_drone.flight), plus the prop joint speeds
+(Isaac prop spin rule, --no-prop-spin: 0). docs/drone_px4.md
 
 Run with the scene up (drone hanging on its anchor), then:
     ros2 run ocean_sim2sim_drone drone_link_test.py --test hover      # hover omega for 0.8 kg, drone released after 1 s
@@ -17,10 +18,10 @@ import time
 import numpy as np
 from ament_index_python.packages import get_package_share_directory
 
-from ocean_sim2sim_drone.flight import ThrustModel, load_flight, quat_wxyz_to_R
+from ocean_sim2sim_drone.flight import ThrustModel, load_flight, prop_speeds, quat_wxyz_to_R
 
 IN = struct.Struct('<15d')
-OUT = struct.Struct('<6d')
+OUT = struct.Struct('<10d')                         # wrench (6) + prop joint speeds (4)
 
 
 def recv_exact(conn, n):
@@ -38,6 +39,7 @@ def main():
     a.add_argument('--test', choices=('hover', 'roll'), default='hover')
     a.add_argument('--port', type=int, default=4570)
     a.add_argument('--release-after', type=float, default=1.0, help='s sim after connecting: /drone/detach')
+    a.add_argument('--no-prop-spin', action='store_true', help='reply prop joint speeds 0 (props held still)')
     a.add_argument('--duration', type=float, default=2.0, help='s sim after release')
     a.add_argument('--flight', default=os.path.join(get_package_share_directory('ocean_sim2sim_gazebo'), 'models', 'iris_075',
                                                     'meshes', 'collision_isaac', 'isaac_flight.yaml'))
@@ -62,7 +64,8 @@ def main():
         t, p, q, v, w, dt = d[0], np.array(d[1:4]), np.array(d[4:8]), np.array(d[8:11]), np.array(d[11:14]), d[14]
         R = quat_wxyz_to_R(q)
         force, torque = tm.step(1.0 / 120.0, R, v)      # one exchange = one Isaac Sim physics step (1/120 s)
-        conn.sendall(OUT.pack(*force, *torque))
+        props = np.zeros(4) if args.no_prop_spin else prop_speeds(tm.forces, tm.dir)
+        conn.sendall(OUT.pack(*force, *torque, *props))
         t0 = t if t0 is None else t0
         rows.append((t, time.time(), p, v, R, w))
         if released is None and t - t0 >= args.release_after:

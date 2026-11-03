@@ -9,12 +9,14 @@
 #
 #   Every plugin exchange (= one Isaac Sim physics step, dt = physics_dt = 1/120 s), same order as Isaac DroneFlight._step:
 #     1. ThrustModel.step: the omega command of the PREVIOUS step through the motor lag -> wrench (thrust, reaction
-#        torque, linear drag with the plugin velocity) = reply to the plugin
+#        torque, linear drag with the plugin velocity) + prop joint speeds (Isaac prop spin rule from the rotor
+#        thrusts of this step, flight.prop_speeds; zeros if parameter prop_spin is false) = reply to the plugin
 #     2. sensor kinematics pose_difference (v = dp/dt, w_body = log(R_prev^T R)/dt; first sample: plugin velocities)
 #     3. PX4Bridge.step (waits for HIL_ACTUATOR_CONTROLS only after the first one, sends HIL_SENSOR + mocap, updates the
 #        sensors) -> omega_cmd -> ThrustModel.set_command (applied in the next exchange)
 #     4. hover reference -> offboard target, PX4Commander.tick(sim t) (Isaac: DroneFlight.check after the physics step)
-#   PX4 not running (before the first restart, after an error): zero wrench at once (the drone hangs on its anchor).
+#   PX4 not running (before the first restart, after an error): zero wrench and props stopped at once (the drone
+#   hangs on its anchor). Reply = 10 doubles: force (3), torque (3) [world], prop joint speeds (4) [rad/s].
 #
 #   ROS interface (all JSON replies in Trigger.message / String.data):
 #     services (std_srvs/srv/Trigger)
@@ -34,13 +36,14 @@
 #                                CLI move commands accepted from now (status ready). Errors: log + state "reference_error"
 #       /drone/px4/state (pub)   std_msgs/String JSON at state_rate Hz sim
 #     parameters: config, flight_config, px4_dir (~/PX4-Autopilot), report_dir, seed (virtual sensor noise seed),
-#       hover_mode, hover_preset, hover_seed (defaults for the reference), use_sim_time (forced true)
+#       hover_mode, hover_preset, hover_seed (defaults for the reference), prop_spin (true: props turn with the Isaac
+#       rule, like Isaac Sim with GUI; false: held still, like Isaac Sim headless), use_sim_time (forced true)
 #   Air start sequence of a scene node: spawn the drone on its anchor -> /drone/px4/restart -> /drone/px4/arm ->
 #     detach the anchor (gz /drone/detach) -> wait until settled -> /drone/px4/reference_cmd (or /drone/px4/target).
 #
 #   Changes from Isaac: air start on an anchor instead of a ground take-off (no take-off legs / waypoints / settle:
 #     scene node's job), the plugin's TCP link replaces the PhysX callback, reference driven by ROS topics instead of
-#     the scene script, geometric controller / RC / gps / flow / propeller visuals dropped.
+#     the scene script, geometric controller / RC / gps / flow dropped.
 # =============================================================
 import json
 import math
@@ -75,10 +78,10 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 from ocean_sim2sim_drone.commander import PX4Commander, Reference
-from ocean_sim2sim_drone.flight import ThrustModel, load_flight, quat_wxyz_to_R
+from ocean_sim2sim_drone.flight import ThrustModel, load_flight, prop_speeds, quat_wxyz_to_R
 
 IN = struct.Struct("<15d")
-OUT = struct.Struct("<6d")
+OUT = struct.Struct("<10d")                         # wrench (6) + prop joint speeds (4)
 
 
 def _r(a, n=4):
@@ -104,6 +107,7 @@ class PX4BridgeNode(Node):
         self.declare_parameter("hover_mode", "static")
         self.declare_parameter("hover_preset", "small")
         self.declare_parameter("hover_seed", 0)
+        self.declare_parameter("prop_spin", True)
         gp = lambda n: self.get_parameter(n).value  # noqa: E731
 
         with open(os.path.expanduser(gp("config")), encoding="utf-8") as f:
@@ -117,6 +121,9 @@ class PX4BridgeNode(Node):
         self.dt = float(cfg["physics_dt"])
         self.thrust = ThrustModel(self.fl)
         n = len(self.thrust.dir)
+        if n != 4:
+            raise ValueError(f"the plugin reply carries 4 prop speeds, the flight config has {n} rotors")
+        self.prop_spin = bool(gp("prop_spin"))
         self.bridge = px4_link.PX4Bridge(sitl, px4c, sensors, self.thrust.w_max, n, int(gp("seed")),
                                          os.path.expanduser(gp("report_dir")))
         inst = int(cfg["instance"])
@@ -247,7 +254,7 @@ class PX4BridgeNode(Node):
             self.wall_last_exchange = time.monotonic()
             self.t, self.pose, self.vel = t, (p, q, R), (v, w)
             self.n_exchange += 1
-            wrench = np.zeros(6)
+            reply = np.zeros(10)                            # wrench + prop speeds, zero while PX4 is not running
             if self.bridge.started and self.error is None:
                 force, torque = self.thrust.step(dt, R, v)       # previous step's command (one step delay, Isaac order)
                 v_s, w_s = self.kin(dt, p, R, v, w)
@@ -255,7 +262,8 @@ class PX4BridgeNode(Node):
                     _w = time.monotonic()
                     self.thrust.set_command(self.bridge.step(dt, p, v_s, R, w_s))
                     self._prof_step = time.monotonic() - _w
-                    wrench = np.concatenate([force, torque])
+                    props = prop_speeds(self.thrust.forces, self.thrust.dir) if self.prop_spin else np.zeros(4)
+                    reply = np.concatenate([force, torque, props])
                 except Exception as e:  # noqa: BLE001  (lockstep timeout, PX4 died, ...)
                     self._fail(f"PX4 link error at sim {t:.3f} s: {e}")
             else:
@@ -270,7 +278,7 @@ class PX4BridgeNode(Node):
                 self.t_next_state = t + 1.0 / float(self.cfg["state_rate"])
                 self.pub_state.publish(String(data=json.dumps(self.state())))
             self.wall_last_exchange = time.monotonic()
-        return wrench
+        return reply
 
     def _idle_tick(self):
         with self.lock:

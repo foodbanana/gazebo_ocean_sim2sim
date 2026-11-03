@@ -29,23 +29,24 @@ Isaac Sim 이 실제로 쓰는 드론 (`drone_iris.yaml`) 과 같게: **3DR Iris
 
 | 항목 | Isaac Sim (`drone_iris.yaml`) | Gazebo |
 |---|---|---|
-| 외형 | Pegasus Iris (원래 PX4 Gazebo Iris) | **같은 메시** (PX4 Gazebo-classic `iris.stl`, 버텍스 18,171 개로 같음) + 프로펠러 2 종 |
-| 방향 | Pegasus 메시 = PX4 메시를 z 축 180° 돌린 것 | 메시를 180° 돌려 같은 방향 (x = 0 / y = 0 단면이 Isaac Sim 기록과 일치) |
+| 외형 | Pegasus Iris (원래 PX4 Gazebo Iris) + 빨간 테이프 (`grasp_marker`) | **Isaac Sim 시각 메시 그대로** (몸체, 테이프 좌우, 프로펠러 4 개를 각 링크 좌표계 OBJ 로 꺼냄, `meshes/visual_isaac/`) |
+| 색 | 몸체 Carpet_Gray, 앞 프로펠러 (rotor0·2) Linen_Blue (OmniPBR MDL), 뒤 프로펠러 (rotor1·3) 재질 없음, 테이프 UsdPreviewSurface (0.65, 0.02, 0.02) 거칠기 0.8 | 재질마다 단색 하나 (텍스처 없음). 메시에 UV 가 없어 Isaac Sim 은 텍스처를 uv (0, 0) 한 점에서만 읽음 → 그 색 × diffuse_tint: 몸체 (0.0162, 0.0165, 0.0170) 거칠기 1.0, 앞 프로펠러 (0.016, 0.070, 0.631) 거칠기 0.73, 뒤 프로펠러 = Isaac 기본 재질 회색 0.215 거칠기 0.5 (렌더링 비교로 확인), 테이프 같은 값 (`config/iris_drone.yaml`) |
 | 크기 | 0.75 배: 전체 x −107~117, y −180~178 mm, 허리 폭 약 79 mm | 같음 (허리 폭 메시 78.4 mm) |
-| 질량 | 몸체 0.78 + 프로펠러 4 × 0.005 = 0.8 kg | 같음 |
-| 프로펠러 | 관절 고정 | 몸체에 고정 (보이기만, 충돌 없음) |
+| 질량 | 몸체 0.78 + 프로펠러 4 × 0.005 = 0.8 kg (강체 5 개) | 같음: 링크 5 개, 링크마다 Isaac Sim PhysX 질량·무게중심·관성 (`isaac_flight.yaml` `links:`). 합 = Isaac 전체 값 (관성 차 < 1e-6 상대) |
+| 프로펠러 | 강체 (충돌 있음), 관절 고정 (FixedJoint). `--prop-spin` (GUI 기본) 이면 revolute 로 두고 보여 주기용 회전: 추력 ≥ 0.1 N 100 rad/s, 0 초과 5 rad/s, 0 이면 정지 (× 방향) | 링크 `rotor0..3` (Isaac 로터 링크 위치·자세) + revolute `rotorN_joint` (추력 축, 한계·감쇠 없음). DroneLockstep 플러그인이 매 step 브리지가 준 속도를 JointVelocityCmd 로 (같은 규칙, 브리지 없으면 0 = 고정). launch 인자 `prop_spin` (기본 true). 충돌 = Isaac PhysX 프로펠러 볼록 껍질 (`rotorN_hull_00.stl`), 접촉 센서 `/drone/contacts` |
 | 충돌 | 몸체+팔 메시 convex decomposition (PhysX) | **Isaac Sim PhysX 가 만든 조각 그대로** (32 조각, 조각당 버텍스 45 개 이하, `scripts/export_isaac_drone_collision.py` 로 꺼냄). 허리 폭 86.1 mm (x = 0 단면, 메시 78.4 mm). 이전: CoACD 32 조각 (`collision.source: coacd`) |
-| 관성 | 형상으로 다시 계산 | 충돌 조각 균일 밀도 + 프로펠러 원판 |
+| 관성 | 형상으로 다시 계산 | Isaac Sim PhysX 값 (링크별) |
 
 - 설정 `ocean_sim2sim_gazebo/config/iris_drone.yaml` → `scripts/build_iris_drone.py` 가 `model.sdf` 와 `meshes/collision/hull_*.stl` 생성
   (다시 만들 때만 `pip install trimesh scipy` 필요, 같은 설정이면 같은 결과)
 - 충돌 조각 꺼내기 (Isaac Sim 드론 설정을 바꿨을 때만, Isaac Sim 필요):
   `~/isaacsim/python.sh ocean_sim2sim_gazebo/scripts/export_isaac_drone_collision.py --isaac-project ~/data_collection_ur5_gripper`
-  → `models/iris_075/meshes/collision_isaac/` (`hull_*.stl`, 비교용 `raw_reference.stl`, `report.txt`). Isaac Sim 프로젝트의 드론 로더
+  → `models/iris_075/meshes/collision_isaac/` (`hull_*.stl`, `rotorN_hull_*.stl`, `isaac_flight.yaml`, 비교용 `raw_reference.stl`, `report.txt`)
+  와 `meshes/visual_isaac/` (시각 메시 OBJ, `materials.yaml`). Isaac Sim 프로젝트의 드론 로더
   (`drone.add_drone`) 로 같은 USD·같은 덮어쓰기를 한 뒤 PhysX `request_convex_collision_representation` 으로 실제 조각을 받는다
 - **왜 그대로 꺼냈나**: 직접 만든 CoACD 조각은 잡는 높이 폭은 비슷했지만 (87.3 vs 87.6 mm) 아래쪽 모양이 달라 (z = −30 mm 50 vs 41 mm)
   어긋나게 잡는 케이스가 실패했다. 같은 조각을 넣자 성공 (grasp_demo.md 5 장)
-- 메시 출처·라이선스: `models/iris_075/README.md` (PX4, BSD)
+- 메시 출처·라이선스: `models/iris_075/README.md` (Pegasus / PX4, BSD)
 - SDF 를 문자열로 생성하므로 메시 경로는 `model://iris_075/...`
 - 처음에 Isaac Sim 의 데모용 간이 드론 (`drone_simple.yaml`, 박스·원통) 을 잘못 옮겼다가 바꿨다
 
@@ -80,7 +81,7 @@ world 위치 = (평균 베이스 위치) + Rz(평균 베이스 yaw) · `drone_po
 | kill | 떨어져 아래의 그리퍼 위에 걸림 (`under_drone` 자세였음) |
 | 리셋 | 성공 (드론 지우고 목록 점에 다시 띄움) |
 | RTF | 1.00 (Iris 메시 + 충돌 조각 32 개) |
-| 손목 영상 (`under_drone` 자세) | Iris 를 아래에서 올려다본 모습: 가운데 몸체, X 자 팔 4 개, 팔 끝 모터, 프로펠러 날. 색은 PX4 Gazebo 재질 그대로 (몸체 진회색, 프로펠러 흰색) — Isaac Sim (Pegasus) 재질 색과 같은지는 아직 비교 안 함 |
+| 손목 영상 (`under_drone` 자세) | Iris 를 아래에서 올려다본 모습: 가운데 몸체, X 자 팔 4 개, 팔 끝 모터, 프로펠러 날. 색은 Isaac Sim 이 그리는 색 (몸체 거의 검정, 앞 프로펠러 파랑, 뒤 프로펠러 회색, 아래쪽 빨간 테이프, 2026-11-03) |
 | 위치 (이전 간이 드론으로 잼) | 드론 중심이 영상 중심 (332, 239) 근처, 파도로 ±15 px. 약 20 px (1.4 cm) 위 = 보트의 기본 피치 0.6° 로 팔 전체가 기울어서 |
 
 ## 6. 리셋 `/sim/reset`

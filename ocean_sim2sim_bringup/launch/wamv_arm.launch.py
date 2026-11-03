@@ -133,7 +133,7 @@ def launch(context, *args, **kwargs):
             package='ocean_sim2sim_drone',
             executable='px4_bridge_node.py',
             output='screen',
-            parameters=[{'px4_dir': arg('px4_dir')}]))
+            parameters=[{'px4_dir': arg('px4_dir'), 'prop_spin': arg('prop_spin').lower() in ('true', '1', 'yes')}]))
     return nodes
 
 
@@ -155,6 +155,8 @@ def generate_launch_description():
         ('drone_mode', 'px4', 'px4 = PX4 SITL flies the drone (venv + PX4-Autopilot needed); fixed = held on a world anchor'),
         ('drone_motion', 'hover', 'px4: static or hover (sine around the hover point, Isaac Sim collection setting)'),
         ('hover_preset', 'mid', 'px4 hover sine preset: small | mid | big (Isaac Sim drone_iris.yaml)'),
+        ('prop_spin', 'true', 'px4: props turn for show (Isaac Sim rule: 100 rad/s at >= 0.1 N thrust, 5 rad/s below, '
+                              '0 off; Isaac Sim default on with GUI, off headless). false = props held still'),
         ('px4_dir', '~/PX4-Autopilot', 'PX4-Autopilot v1.16.0 directory (built: make px4_sitl_default none)'),
     ]
     return LaunchDescription(

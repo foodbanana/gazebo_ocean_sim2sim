@@ -1,52 +1,61 @@
-# Drone to grasp: 3DR Iris scaled 0.75 (stand-in until the PX4 SITL drone).
-# Same as the Isaac Sim drone (data_collection_ur5_gripper isaacsim/config/drone_iris.yaml):
-#   Iris outline 0.75x (waist 105 mm -> ~79 mm, fits the 107 mm gripper opening), 0.8 kg (body 0.78 + rotors 4 x 0.005),
-#   rotors fixed to the body, body collision = convex decomposition of the body+arms mesh, inertia from the shapes.
-# Meshes: PX4 Gazebo-classic Iris (models/iris_075/meshes, see README there) = the same mesh as the Isaac Sim
-# (Pegasus) Iris, which is that mesh turned 180 deg about z (checked: x=0 / y=0 sections mirror each other).
+# Drone to grasp: 3DR Iris scaled 0.75, built like the Isaac Sim drone (data_collection_ur5_gripper
+# isaacsim/config/drone_iris.yaml, loaded by its drone.add_drone): 5 rigid bodies = body (0.78 kg) + rotor0..3 (props,
+# 0.005 kg each, total 0.8 kg), the props on revolute joints about their thrust axis (Isaac Sim: FixedJoint, revolute
+# only when its props spin for show; here always revolute, held at the commanded speed by the DroneLockstep plugin:
+# 0 = fixed). Shapes, frames, masses and collision hulls are exported from Isaac Sim with
+# scripts/export_isaac_drone_collision.py (meshes/collision_isaac/, meshes/visual_isaac/).
 #
 # scripts/build_iris_drone.py turns this into models/iris_075/model.sdf and meshes/collision/hull_*.stl.
-# Drone frame: +x forward, +y left, +z up, origin = original Iris model origin (scaled). m, kg.
+# Drone (body link) frame: +x forward, +y left, +z up, origin = Isaac Sim body link origin. m, kg.
 
-scale: 0.75
-yaw: 3.141592653589793        # mesh -> drone frame rotation about z (Isaac Sim / Pegasus orientation)
+# Isaac Sim exports (relative to models/iris_075)
+isaac_flight: meshes/collision_isaac/isaac_flight.yaml   # whole-drone values (PX4 bridge) + `links:` per rigid body
+isaac_visual: meshes/visual_isaac                        # <link>_<mesh>.obj in link frames + materials.yaml
 
-body:
-  mesh: meshes/iris.stl
-  mass: 0.78
-  color: [0.2, 0.2, 0.2]
-
-# Mass, COM, inertia and rotor positions: isaac = the values Isaac Sim's PhysX uses for its flying drone
-# (meshes/collision_isaac/isaac_flight.yaml, exported with scripts/export_isaac_drone_collision.py; also read by the PX4
-# bridge for thrust and PX4 rotor geometry). computed = from the hulls + rotor discs below (before 2026-11-03).
-# Isaac Sim rotors (body frame, mm): 0 (103.2, -155.1) dir -1, 1 (-93.8, 164.0) -1, 2 (103.7, 152.4) +1, 3 (-93.4, -166.5) +1
-#   (the PX4 Gazebo Iris visuals below were at +-97.5 / +-150..165: different, so rotors now sit at the Isaac Sim points)
-mass_properties: isaac
-isaac_flight: meshes/collision_isaac/isaac_flight.yaml
-
-# rotor discs (visual only, fixed). Positions / meshes of the original Iris model (before scale and yaw)
-rotors:
-  mass: 0.005                 # each
-  radius: 0.128               # for the disc inertia
-  thickness: 0.005
-  mesh_by_direction: {-1: meshes/iris_prop_ccw.dae, 1: meshes/iris_prop_cw.dae}   # Isaac Sim rotor direction -> visual
-  list:
-    - {pos: [0.13, -0.22, 0.023], mesh: meshes/iris_prop_ccw.dae}
-    - {pos: [-0.13, 0.20, 0.023], mesh: meshes/iris_prop_ccw.dae}
-    - {pos: [0.13, 0.22, 0.023], mesh: meshes/iris_prop_cw.dae}
-    - {pos: [-0.13, -0.20, 0.023], mesh: meshes/iris_prop_cw.dae}
+# Visual materials: one plain color per Isaac Sim material (no textures).
+#   UsdPreviewSurface materials (grasp_marker = red tape): their own diffuseColor / roughness / metallic (materials.yaml)
+#   unbound meshes (rotor1, rotor3 props): what Isaac Sim renders for them = its RTX default gray (materials.yaml)
+#   MDL OmniPBR materials (Carpet_Gray body, Linen_Blue front props): the meshes have no UV primvar, so Isaac Sim
+#     samples every texture at uv (0, 0) = one constant color: diffuse = BaseColor texel (bilinear, wrap: mean of the 4
+#     corner texels, sRGB -> linear) x diffuse_tint (USD shader input), roughness = ORM texel G, metallic = ORM texel B.
+#     Checked with an Isaac Sim render probe (2026-11-03): a UsdPreviewSurface with these values renders the same
+#     (rgb 29.7 / 28.8 / 29.3 vs Carpet_Gray 30.4 / 30.2 / 31.5; 43.8 / 81.0 / 208.2 vs Linen_Blue 43.7 / 81.9 / 209.4).
+#     The normal / detail normal maps only tilt the shading normal by a constant in an undefined tangent frame: dropped.
+#   Colors are linear RGB (like the USD values). specular 1 = Ogre metallic workflow full dielectric specular (F0 0.03;
+#   OmniPBR specular_level 0.5 = F0 0.04).
+mdl_materials:
+  Carpet_Gray:       # BaseColor corners sRGB 114 -> 0.16827 x tint (0.0965657, 0.0977558, 0.1012658); ORM corners (255, 255, 0)
+    diffuse: [0.016249, 0.016450, 0.017040]
+    roughness: 1.0
+    metalness: 0.0
+  Linen_Blue:        # BaseColor corners -> (0.0802, 0.3491, 0.6308) x tint (0.2, 0.2, 1.0); ORM corners (255, 185, 0)
+    diffuse: [0.016040, 0.069820, 0.630800]
+    roughness: 0.7255
+    metalness: 0.0
+specular: [1.0, 1.0, 1.0]
 
 # Body collision. source isaac = the hulls Isaac Sim's PhysX actually simulates (convexDecomposition of the body mesh,
 # exported by scripts/export_isaac_drone_collision.py: 32 hulls, <= 45 vertices). Same input as Isaac Sim.
 #   They are thicker than the mesh: grasp waist (finger slab |x| < 13 mm, z = 0) 87.6 mm vs mesh 80.5 mm.
-# source coacd = CoACD here (threshold etc. below; waist 87.3 mm, z = -30 mm 50 mm vs Isaac Sim 41 mm), used before 2026-11-03
+# source coacd = CoACD here of the PX4 Gazebo Iris mesh (body_mesh, scale, yaw below; threshold etc.; waist 87.3 mm,
+#   z = -30 mm 50 mm vs Isaac Sim 41 mm), used before 2026-11-03
+# Rotor (prop) collision: always the Isaac Sim PhysX convex hulls (meshes/collision_isaac/rotorN_hull_*.stl).
 collision:
   source: isaac
   isaac_dir: meshes/collision_isaac
+  body_mesh: meshes/iris.stl  # coacd only: PX4 Gazebo-classic Iris mesh = the Isaac Sim mesh turned 180 deg about z
+  scale: 0.75
+  yaw: 3.141592653589793
   threshold: 0.03             # concavity error
   max_convex_hull: 32
   max_ch_vertex: 64
   seed: 0
-  # surface friction of the hulls = Isaac Sim object material static friction 0.6 (DART: one coefficient, the smaller
-  # of the two surfaces in contact). Same as the fingers (ur5_rh_p12_description gripper_friction). docs/grasp.md
+  # surface friction of all hulls (body and props) = Isaac Sim object material static friction 0.6 (DART: one
+  # coefficient, the smaller of the two surfaces in contact). Same as the fingers (ur5_rh_p12_description
+  # gripper_friction). docs/grasp.md
   friction: 0.6
+
+# Prop joints rotorN_joint (parent body, child rotorN, axis = rotor link z = thrust axis, no limits / damping / friction:
+# Isaac Sim revolute jointN has none). Speeds come from the PX4 bridge through the DroneLockstep plugin (Isaac rule:
+# 100 rad/s x direction if the rotor thrust >= 0.1 N, 5 rad/s if 0 < thrust < 0.1 N, else 0; bridge parameter prop_spin).
+rotor_joints: [rotor0_joint, rotor1_joint, rotor2_joint, rotor3_joint]

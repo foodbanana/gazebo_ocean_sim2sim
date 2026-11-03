@@ -7,17 +7,22 @@
 // (the bridge in turn waits for PX4). The wrench is applied at every physics step until the next reply (240 Hz physics:
 // 2 steps per exchange).
 //
-// No bridge connected: no force (the drone hangs on its world anchor). Connection lost or no reply within `timeout`:
-// error, no force (no silent fallback). Reconnects when the bridge comes back (e.g. after a reset).
+// Prop spin (visual, Isaac Sim drone_flight rule computed by the bridge): the reply also carries the 4 prop joint
+// speeds, set as joint velocity commands (JointVelocityCmd) on the rotor joints at every physics step.
+//
+// No bridge connected: no force, props held still (the drone hangs on its world anchor). Connection lost or no reply
+// within `timeout`: error, no force, props stopped (no silent fallback). Reconnects when the bridge comes back.
 //
 // Wire format (little endian float64):
 //   plugin -> bridge  15 doubles: sim time [s], position (3) [m, world], orientation (w x y z, world),
 //                                 linear velocity (3) [m/s, world], angular velocity (3) [rad/s, world], step dt [s]
-//   bridge -> plugin   6 doubles: force (3) [N, world], torque (3) [N m, world, about the link origin]
+//   bridge -> plugin  10 doubles: force (3) [N, world], torque (3) [N m, world, about the link origin],
+//                                 rotor joint velocities (4) [rad/s, rotor_joints order]
 //
 // SDF:
 //   <plugin filename="ocean_sim2sim_drone-DroneLockstep" name="ocean_sim2sim::DroneLockstep">
-//     <link_name>body</link_name> <port>4570</port> <rate>120</rate> <timeout>10</timeout>
+//     <link_name>body</link_name> <rotor_joints>rotor0_joint rotor1_joint rotor2_joint rotor3_joint</rotor_joints>
+//     <port>4570</port> <rate>120</rate> <timeout>10</timeout>
 //   </plugin>
 
 #include <arpa/inet.h>
@@ -33,12 +38,15 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include <gz/common/Console.hh>
 #include <gz/math/Pose3.hh>
 #include <gz/math/Vector3.hh>
 #include <gz/plugin/Register.hh>
+#include <gz/sim/Joint.hh>
 #include <gz/sim/Link.hh>
 #include <gz/sim/Model.hh>
 #include <gz/sim/System.hh>
@@ -69,6 +77,23 @@ public:
     }
     this->link = gz::sim::Link(linkEntity);
     this->link.EnableVelocityChecks(_ecm, true);
+    std::istringstream names(_sdf->Get<std::string>("rotor_joints", "").first);
+    std::string jn;
+    while (names >> jn)
+    {
+      const auto j = this->model.JointByName(_ecm, jn);
+      if (j == gz::sim::kNullEntity)
+      {
+        gzerr << "[DroneLockstep] rotor joint [" << jn << "] not found in model [" << this->model.Name(_ecm) << "]\n";
+        return;
+      }
+      this->joints.emplace_back(j);
+    }
+    if (this->joints.size() != kRotors)
+    {
+      gzerr << "[DroneLockstep] <rotor_joints> needs " << kRotors << " joint names, got " << this->joints.size() << "\n";
+      return;
+    }
     this->ok = true;
     gzmsg << "[DroneLockstep] " << this->model.Name(_ecm) << "::" << linkName << " <-> bridge 127.0.0.1:" << this->port
           << ", exchange every " << this->period * 1000.0 << " ms sim time\n";
@@ -95,14 +120,17 @@ public:
       if (!this->Exchange(_ecm, t, dt))
       {
         this->Close();
-        this->wrench.fill(0.0);
+        this->reply.fill(0.0);
       }
     }
     if (this->fd >= 0)
       --this->stepsLeft;
+    // prop joint speeds every step (0 = held still while no bridge / after an error)
+    for (size_t i = 0; i < kRotors; ++i)
+      this->joints[i].SetVelocity(_ecm, {this->fd >= 0 ? this->reply[6 + i] : 0.0});
     if (this->fd >= 0)
-      this->link.AddWorldWrench(_ecm, gz::math::Vector3d(this->wrench[0], this->wrench[1], this->wrench[2]),
-                                gz::math::Vector3d(this->wrench[3], this->wrench[4], this->wrench[5]));
+      this->link.AddWorldWrench(_ecm, gz::math::Vector3d(this->reply[0], this->reply[1], this->reply[2]),
+                                gz::math::Vector3d(this->reply[3], this->reply[4], this->reply[5]));
   }
 
 private:
@@ -151,7 +179,7 @@ private:
       gzerr << "[DroneLockstep] bridge connection lost (send) at sim " << _t << " s: no rotor force\n";
       return false;
     }
-    std::array<double, 6> in{};
+    std::array<double, 6 + kRotors> in{};
     if (!this->ReadAll(in.data(), sizeof(in)))
     {
       gzerr << "[DroneLockstep] no reply from the bridge within " << this->timeout << " s (or connection lost) at sim "
@@ -161,10 +189,10 @@ private:
     for (double x : in)
       if (!std::isfinite(x))
       {
-        gzerr << "[DroneLockstep] non-finite wrench from the bridge: no rotor force\n";
+        gzerr << "[DroneLockstep] non-finite reply from the bridge: no rotor force\n";
         return false;
       }
-    this->wrench = in;
+    this->reply = in;
     return true;
   }
 
@@ -204,6 +232,7 @@ private:
     return true;
   }
 
+  static constexpr size_t kRotors = 4;
   gz::sim::Model model{gz::sim::kNullEntity};
   gz::sim::Link link{gz::sim::kNullEntity};
   bool ok{false};
@@ -213,7 +242,8 @@ private:
   int fd{-1};
   double nextConnectTry{0.0};
   long stepsLeft{0};
-  std::array<double, 6> wrench{};
+  std::array<double, 6 + kRotors> reply{};   // wrench (6) + rotor joint velocities (4)
+  std::vector<gz::sim::Joint> joints;
 };
 }  // namespace ocean_sim2sim
 

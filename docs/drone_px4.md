@@ -19,7 +19,7 @@ PX4 v1.16.0 실제 펌웨어가 드론을 날리고, MAVLink 연결·가상 센�
 
 | 파일 | 역할 | 출처 |
 |---|---|---|
-| `src/DroneLockstep.cc` | Gazebo 시스템: 1/120 s 마다 상태 보내고 응답 (힘·토크) 까지 기다림, 매 스텝 적용 | 새로 |
+| `src/DroneLockstep.cc` | Gazebo 시스템: 1/120 s 마다 상태 보내고 응답 (힘·토크 6 + 프로펠러 관절 속도 4) 까지 기다림, 매 스텝 적용 (속도 = JointVelocityCmd, `<rotor_joints>`) | 새로 |
 | `ocean_sim2sim_drone/flight.py` | 추력 모델 (한 스텝 지연, 모터 지연 12.5/25 ms, kω², 반토크, 공기저항) | Isaac `drone_flight.py` |
 | `ocean_sim2sim_drone/sensors.py`, `pegasus_geo_mag.py` | 가상 센서 (같은 seed 면 Isaac 과 값이 같음) | Isaac `px4_sensors.py` (Pegasus, BSD-3) |
 | `ocean_sim2sim_drone/px4_link.py` | PX4 실행·재시작, MAVLink HIL lockstep, PX4 파라미터 | Isaac `px4_bridge.py` |
@@ -37,6 +37,7 @@ PX4 파라미터: `CA_ROTORi_PX/PY` = 로터 위치, `MC_ROLLRATE_K` 0.2456, `MC
 cd ~/vrx_ws && source /opt/ros/jazzy/setup.bash && source .venv/bin/activate && source install/setup.bash   # venv: README
 ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py                   # drone_mode:=px4 drone_motion:=hover hover_preset:=mid (기본)
 ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py drone_mode:=fixed # PX4 없이 world 고정 드론 (예전)
+ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py prop_spin:=false   # 프로펠러 멈춤 (Isaac headless 기본). 기본 true = Isaac 규칙으로 돎
 python3 src/gazebo_ocean_sim2sim/ocean_sim2sim_drone/scripts/drone_cmd.py status   # goto x y z | hold | land | kill
 ```
 
@@ -88,3 +89,15 @@ frame_id 는 Gazebo 이름 (`wamv/wamv/imu_wamv_link/imu_wamv_sensor`, Isaac `im
 - **Gazebo 시간은 정수 ns**: 1/240 s 두 번이 1/120 s 와 같지 않아 가끔 한 번 건너뜀 (12.5 ms) → 플러그인이 스텝 수를 셈
 - **arm 직후 바로 놓으면 떨어짐**: PX4 가 착지 상태로 보고 공회전 (ω 101 rad/s) → 이륙 램프로 추력을 올린 뒤 놓음
 - 이전 시험의 Gazebo 가 남아 두 서버가 돌면 모든 것이 느려지고 컨트롤러가 안 뜸 → 종료 확인
+
+## 7. 프로펠러 링크·회전 뒤 확인 (2026-11-03)
+
+드론을 Isaac Sim 구조 (몸체 + 로터 링크 4 개 + 회전 관절, 로터 충돌, 링크별 질량) 와 Isaac 메시·색 (빨간 테이프는 정확히) 으로 바꾼 뒤:
+
+- 호버 RTF 1.00 (프로펠러 회전 켬·끔 같음). **잡고 있는 동안 RTF 0.43~0.47** — 이전 한 링크 모델도 0.47 로 같음 (새 모델 탓 아님).
+  손가락 메시 ↔ 드론 볼록 조각 32 개 접촉 계산 (Isaac Sim 은 잡은 채 0.69). lockstep 이라 결과는 같고 시간만 더 걸림
+- 잔잔한 물 success·offset_y held, offset_x slip (모터 정지 뒤 회전 10.4° > 10°)
+- **모터 정지 뒤 드론이 두 손가락 접촉점을 잇는 축 둘레로 기우는 일이 잦다**: 0.12 s 에 10° 까지 가속하며 기울기도 함. 실행마다 1~10° (기준 10° 경계).
+  로터 충돌을 빼도, 관절을 고정해도, 이전 한 링크 모델에서도 생김 (고정 드론에서 5.5°·10.7° 기록) → 모델 변경 탓이 아니라
+  선 접촉 둘레 비틀림을 마찰이 버티지 못하는 접촉 처리 차이로 봄 (Isaac Sim 0.9~1.7°). gap 으로 기록, 원인은 더 확인 필요
+- 판정기: 링크마다 접촉 센서가 같은 토픽 `/drone/contacts` 로 내므로 `grasp_demo.py` 가 같은 시각 메시지를 합침

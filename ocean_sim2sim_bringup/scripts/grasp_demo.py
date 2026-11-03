@@ -97,8 +97,13 @@ class Demo(Node):
         self.q['rh_r1_joint'] = m.position[0] * self.dc['gripper_upper'] / self.dc['gripper_raw_max']
 
     def _on_contacts(self, m):
-        self.contacts = m
-        self.contact_t = m.header.stamp.sec + m.header.stamp.nanosec * 1e-9
+        # one contact sensor per drone link (body, rotor0..3) on the same topic: merge the messages of one sim step
+        t = m.header.stamp.sec + m.header.stamp.nanosec * 1e-9
+        if self.contacts is not None and t == self.contact_t:
+            self.contacts.contacts.extend(m.contacts)
+        else:
+            self.contacts = m
+            self.contact_t = t
 
     # ------------------------------------------------------------------ setup
     def setup(self):

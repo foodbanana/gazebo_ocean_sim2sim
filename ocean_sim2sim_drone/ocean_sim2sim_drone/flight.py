@@ -14,6 +14,20 @@ motor mapping omega = scaling u + zero_position_armed). Gazebo applies the resul
 import numpy as np
 import yaml
 
+# Prop spin (visual only, Isaac Sim drone_flight.py VISUAL_FORCE / flight.prop_visual_speed / prop_idle_speed of
+# drone_iris.yaml, from Pegasus handle_propeller_visual): joint speed = visual speed x direction if the rotor thrust
+# >= 0.1 N, idle speed x direction if 0 < thrust < 0.1 N, 0 if no thrust. Overwritten every physics step.
+PROP_VISUAL_FORCE = 0.1     # N
+PROP_VISUAL_SPEED = 100.0   # rad/s
+PROP_IDLE_SPEED = 5.0       # rad/s
+
+
+def prop_speeds(forces, directions):
+    """Isaac Sim prop joint speeds [rad/s] from the rotor thrusts F = k omega^2 applied in this step."""
+    f = np.asarray(forces, dtype=float)
+    spd = np.where(f >= PROP_VISUAL_FORCE, PROP_VISUAL_SPEED, np.where(f > 0, PROP_IDLE_SPEED, 0.0))
+    return spd * np.asarray(directions, dtype=float)
+
 
 def quat_wxyz_to_R(q):
     w, x, y, z = q
@@ -40,10 +54,12 @@ class ThrustModel:
         self.tau = (float(md['tau_up']), float(md['tau_down'])) if md.get('enabled') else None
         self.omega = np.zeros(len(self.dir))
         self.omega_cmd = np.zeros(len(self.dir))
+        self.forces = np.zeros(len(self.dir))       # rotor thrusts of the last step() [N]
 
     def reset(self):
         self.omega[:] = 0.0
         self.omega_cmd[:] = 0.0
+        self.forces = np.zeros(len(self.dir))
 
     def step(self, dt, R, v):
         """Apply the stored command (lag) and return the wrench (force, torque about the body origin), world frame."""
@@ -52,7 +68,7 @@ class ThrustModel:
         else:
             tau = np.where(self.omega_cmd > self.omega, self.tau[0], self.tau[1])
             self.omega = self.omega + (self.omega_cmd - self.omega) * (1.0 - np.exp(-dt / tau))
-        F = self.k * self.omega ** 2
+        F = self.forces = self.k * self.omega ** 2
         f_rot = (R @ self.axis.T).T * F[:, None]                     # world, per rotor
         r_rot = (R @ self.pos.T).T                                   # world offset from the body origin
         force = f_rot.sum(axis=0) + R @ (-self.drag * (R.T @ v))

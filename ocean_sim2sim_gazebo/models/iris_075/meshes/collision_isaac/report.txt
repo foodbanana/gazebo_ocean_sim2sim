@@ -1,13 +1,33 @@
 Exported by ocean_sim2sim_gazebo/scripts/export_isaac_drone_collision.py (Isaac Sim PhysX cooked hulls)
 drone config isaacsim/config/drone_iris.yaml, USD isaacsim/assets/drones/iris/iris.usd, scale 0.75, body frame /World/Drone/body
 /World/Drone/body/body: approximation convexDecomposition, 32 convex(es), 809 vertices
+/World/Drone/rotor0/iris_prop_ccw: approximation convexHull, 1 convex(es), 21 vertices
+/World/Drone/rotor1/iris_prop_ccw: approximation convexHull, 1 convex(es), 21 vertices
+/World/Drone/rotor2/iris_prop_cw: approximation convexHull, 1 convex(es), 22 vertices
+/World/Drone/rotor3/iris_prop_cw: approximation convexHull, 1 convex(es), 22 vertices
+rotor0: 1 hull(s), 21 vertices, bounds [[-10.4, -96.2, -4.0], [10.6, 97.1, 3.8]] mm (rotor link frame)
+rotor1: 1 hull(s), 21 vertices, bounds [[-10.7, -96.4, -4.0], [10.4, 96.9, 3.8]] mm (rotor link frame)
+rotor2: 1 hull(s), 22 vertices, bounds [[-10.4, -96.8, -3.9], [10.6, 96.4, 3.8]] mm (rotor link frame)
+rotor3: 1 hull(s), 22 vertices, bounds [[-11.7, -96.8, -4.0], [9.3, 96.4, 3.7]] mm (rotor link frame)
 32 hulls, max 45 vertices; bounds hulls [[-109.9, -180.4, -50.3], [117.2, 181.1, 39.3]] mm, raw [[-107.3, -180.4, -50.3], [117.2, 177.9, 35.0]] mm
-  width in the finger slab (|x| < 13 mm) at z +0 mm: hulls 87.7, raw 80.4 mm
-  width in the finger slab (|x| < 13 mm) at z -10 mm: hulls 87.4, raw 79.1 mm
-  width in the finger slab (|x| < 13 mm) at z -20 mm: hulls 84.7, raw 75.9 mm
+  width in the finger slab (|x| < 13 mm) at z +0 mm: hulls 87.6, raw 80.6 mm
+  width in the finger slab (|x| < 13 mm) at z -10 mm: hulls 87.4, raw 79.0 mm
+  width in the finger slab (|x| < 13 mm) at z -20 mm: hulls 84.6, raw 76.0 mm
   width in the finger slab (|x| < 13 mm) at z -30 mm: hulls 41.4, raw 35.8 mm
+visual body_body.obj: 18171 vertices, 39350 triangles, normals agree with winding 100.0 %, material body/Looks/Carpet_Gray
+visual body_grasp_marker_left.obj: 2583 vertices, 4960 triangles, normals agree with winding 100.0 %, material Looks/grasp_marker
+visual body_grasp_marker_right.obj: 2706 vertices, 5200 triangles, normals agree with winding 100.0 %, material Looks/grasp_marker
+visual rotor0_iris_prop_ccw.obj: 1924 vertices, 3839 triangles, normals agree with winding 100.0 %, material rotor0/Looks/Linen_Blue
+visual rotor1_iris_prop_ccw.obj: 1924 vertices, 3839 triangles, normals agree with winding 100.0 %, material None
+visual rotor2_iris_prop_cw.obj: 2311 vertices, 4374 triangles, normals agree with winding 100.0 %, material rotor2/Looks/Linen_Blue
+visual rotor3_iris_prop_cw.obj: 2311 vertices, 4374 triangles, normals agree with winding 100.0 %, material None
 mass 0.8 kg, COM [0.00013899999612476677, -3.9999998989515007e-05, 0.00043399998685345054] m, inertia diag [0.005365, 0.003242, 0.008194] kg m2
   rotor0: [0.10319600254297256, -0.15505099296569824, 0.017249999567866325] axis [-0.0, 0.0, 1.0] dir -1
   rotor1: [-0.09375, 0.16402100026607513, 0.017249999567866325] axis [-0.0, 0.0, 1.0] dir -1
   rotor2: [0.10373199731111526, 0.15241500735282898, 0.017249999567866325] axis [-0.0, -0.0, 1.0] dir 1
   rotor3: [-0.0933770015835762, -0.16649900376796722, 0.017249999567866325] axis [-0.0, -0.0, 1.0] dir 1
+link body: mass 0.78, COM [0.0, 0.0, 0.0], inertia [[0.00484744599, -0.00011825668, -6.71407e-06], [-0.0001182567, 0.00301357638, -4.24257e-06], [-6.71407e-06, -4.24257e-06, 0.00745917484]], pose in body {'position': [0.0, 0.0, 0.0], 'orientation_wxyz': [1.0, 0.0, 0.0, 0.0]}, PhysX COM frame [0.999485, 0.0004838, -0.0012504, -0.0320624]
+link rotor0: mass 0.005, COM [1.092e-05, -0.00097107, 0.00011856], inertia [[7.17719e-06, -4.217e-08, -7.8e-10], [-4.217e-08, 1.344e-07, 4.05e-09], [-7.8e-10, 4.05e-09, 7.28556e-06]], pose in body {'position': [0.1031965, -0.1550515, 0.0172498], 'orientation_wxyz': [0.7071101, -0.0, 0.0, 0.7071035]}, PhysX COM frame [0.9999886, -0.000294, -0.0037246, -0.0029929]
+link rotor1: mass 0.005, COM [-0.00022997, -0.00118962, 0.00011856], inertia [[7.17719e-06, -4.217e-08, -7.8e-10], [-4.217e-08, 1.344e-07, 4.05e-09], [-7.8e-10, 4.05e-09, 7.28556e-06]], pose in body {'position': [-0.09375, 0.1640209, 0.0172501], 'orientation_wxyz': [0.7071101, -0.0, 0.0, 0.7071035]}, PhysX COM frame [0.9999886, -0.000294, -0.0037246, -0.0029929]
+link rotor2: mass 0.005, COM [6.125e-05, -0.00013539, 0.00015048], inertia [[7.1087e-06, 4.27e-08, 2.7e-10], [4.27e-08, 1.3762e-07, 3.8e-10], [2.7e-10, 3.8e-10, 7.21952e-06]], pose in body {'position': [0.1037316, 0.1524147, 0.0172499], 'orientation_wxyz': [0.70711, 0.0, -0.0, 0.7071036]}, PhysX COM frame [0.9999946, -3.05e-05, 0.0012387, 0.0030624]
+link rotor3: mass 0.005, COM [-0.00119198, -0.00015542, 7.51e-05], inertia [[7.1087e-06, 4.27e-08, 2.7e-10], [4.27e-08, 1.3762e-07, 3.8e-10], [2.7e-10, 3.8e-10, 7.21952e-06]], pose in body {'position': [-0.0933765, -0.1664991, 0.0172499], 'orientation_wxyz': [0.70711, 0.0, -0.0, 0.7071036]}, PhysX COM frame [0.9999946, -3.05e-05, 0.0012387, 0.0030624]
