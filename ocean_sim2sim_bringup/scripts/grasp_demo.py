@@ -118,11 +118,14 @@ class Demo(Node):
         z_g = np.array([0.0, 0.0, 1.0])
         self.R_dg = np.column_stack([x_g, np.cross(z_g, x_g), z_g])     # gripper axes in the drone frame
 
-    def set_scene_params(self, targets, offset):
+    def set_scene_params(self, targets, offset, pos_base=None):
         req = SetParameters.Request()
         req.parameters = [
             ParamMsg(name='use_drone_targets', value=ParameterValue(type=ParameterType.PARAMETER_BOOL, bool_value=targets)),
             ParamMsg(name='drone_offset', value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=offset))]
+        if pos_base is not None:
+            req.parameters.append(ParamMsg(name='drone_pos_base', value=ParameterValue(
+                type=ParameterType.PARAMETER_DOUBLE_ARRAY, double_array_value=[float(v) for v in pos_base])))
         res = self.call(self.param_cli, req, 10.0)
         if not all(r.successful for r in res.results):
             raise RuntimeError(f'scene parameters not set: {res.results}')
@@ -207,10 +210,11 @@ class Episode:
 
     # ---- geometry
     def grasp_target(self):
-        """Grasp TCP pose (world). empty: aims at (drone - drone_offset), i.e. where Isaac Sim's default drone would be."""
+        """Grasp TCP pose (world). empty: the drone was spawned at default + drone_offset (Isaac Sim), the arm aims at
+        the default position (drone - drone_offset, base frame = level, yaw of the drone)."""
         p, R = self.n.drone_world()
         if self.case == 'empty':
-            p = p - np.asarray(self.cc['drone_offset'], dtype=float)
+            p = p - R @ np.asarray(self.cc['drone_offset'], dtype=float)
         off = np.asarray(self.cc.get('tcp_offset', [0, 0, 0]), dtype=float)
         return p + R @ np.asarray(self.dc['tcp_in_drone']) + off, R @ self.n.R_dg
 
@@ -385,7 +389,14 @@ def hold_metrics(rows, phase='S3_hold'):
 
 def run_case(n, case, dc, out_dir, log):
     if not n.args.no_reset:
-        res = n.call(n.reset_cli, Trigger.Request(), 60.0)
+        moved = 'drone_offset' in dc['cases'].get(case, {}) and n.args.drone == 'default'
+        if moved:     # empty: drone at the default position + drone_offset for this reset (Isaac Sim)
+            n.set_scene_params(False, 0.0, np.asarray(n.default_pos) + np.asarray(dc['cases'][case]['drone_offset']))
+        try:
+            res = n.call(n.reset_cli, Trigger.Request(), 60.0)
+        finally:
+            if moved:
+                n.set_scene_params(False, 0.0, n.default_pos)
         if not res.success:
             raise RuntimeError(f'/sim/reset failed: {res.message}')
         info = json.loads(res.message)
@@ -482,8 +493,9 @@ def main():
 
     try:
         n.setup()
+        n.default_pos = dc['drone_pos_base']
         if not args.no_reset:
-            n.set_scene_params(args.drone == 'targets', 0.03 if args.drone == 'targets' else 0.0)
+            n.set_scene_params(args.drone == 'targets', 0.03 if args.drone == 'targets' else 0.0, n.default_pos)
         log(f'grasp_demo {datetime.datetime.now().isoformat(timespec="seconds")}  cases {cases} x {args.repeat}, '
             f'drone {args.drone}, config {args.config}')
         oks = []

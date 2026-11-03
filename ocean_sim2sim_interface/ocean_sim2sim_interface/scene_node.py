@@ -276,6 +276,7 @@ class SceneNode(Node):
         # read now: the grasp demo switches these at run time (ros2 param set), e.g. targets off + offset 0 = drone_pos_base
         self.use_targets = bool(self.get_parameter('use_drone_targets').value)
         self.drone_offset = float(self.get_parameter('drone_offset').value)
+        self.drone_pos_base = [float(v) for v in self.get_parameter('drone_pos_base').value]
         if self.use_targets:
             if not self.order:
                 self.order = list(range(len(self.targets)))

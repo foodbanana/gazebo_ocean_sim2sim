@@ -8,6 +8,7 @@
 #   S4 drone motors off (/sim/drone_kill), hold_time -> S5 end_wait
 
 control_hz: 50
+drone_pos_base: [0.60, 0.0, 0.738]   # default drone position, robot base frame (Isaac Sim drone_pos 1.50 - table 0.762)
 max_dq_per_tick: 0.063        # rad per control tick (teleop command change limit)
 ik_damping: 0.02
 # IK error from the measured joints (Isaac Sim) or from the commanded joints (Gazebo). Isaac Sim's demo writes the joint
@@ -53,7 +54,6 @@ cases:
   success: {}
   offset_y: {tcp_offset: [0.0, 0.010, 0.0]}     # 10 mm in the closing direction (world)
   offset_x: {tcp_offset: [0.005, 0.0, 0.0]}     # 5 mm along the body
-  empty: {drone_offset: [0.0, -0.40, 0.20]}     # Isaac Sim: drone moved, arm aims at the default position.
-                                                # Gazebo: the arm aims at (drone - drone_offset) instead (same relative miss)
+  empty: {drone_offset: [0.0, -0.40, 0.20]}     # drone spawned at default + this (robot base frame), arm aims at the default
   miss: {tcp_offset: [0.0, 0.0, -0.04]}         # grasp 4 cm too low
   # drop (Isaac Sim: gripper force 0.05 Nm at motor stop) is not possible: no run-time effort limit change in Gazebo
