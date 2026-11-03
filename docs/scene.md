@@ -34,11 +34,17 @@ Isaac Sim 이 실제로 쓰는 드론 (`drone_iris.yaml`) 과 같게: **3DR Iris
 | 크기 | 0.75 배: 전체 x −107~117, y −180~178 mm, 허리 폭 약 79 mm | 같음 (허리 폭 메시 78.4 mm) |
 | 질량 | 몸체 0.78 + 프로펠러 4 × 0.005 = 0.8 kg | 같음 |
 | 프로펠러 | 관절 고정 | 몸체에 고정 (보이기만, 충돌 없음) |
-| 충돌 | 몸체+팔 메시 convex decomposition (PhysX) | CoACD convex decomposition, 32 조각, 조각당 버텍스 64 개 이하. 허리 폭 82.8 mm (볼록 조각이 오목한 곳을 메워 4 mm 두꺼움) |
+| 충돌 | 몸체+팔 메시 convex decomposition (PhysX) | **Isaac Sim PhysX 가 만든 조각 그대로** (32 조각, 조각당 버텍스 45 개 이하, `scripts/export_isaac_drone_collision.py` 로 꺼냄). 허리 폭 86.1 mm (x = 0 단면, 메시 78.4 mm). 이전: CoACD 32 조각 (`collision.source: coacd`) |
 | 관성 | 형상으로 다시 계산 | 충돌 조각 균일 밀도 + 프로펠러 원판 |
 
 - 설정 `ocean_sim2sim_gazebo/config/iris_drone.yaml` → `scripts/build_iris_drone.py` 가 `model.sdf` 와 `meshes/collision/hull_*.stl` 생성
-  (다시 만들 때만 `pip install trimesh coacd scipy` 필요, 같은 설정이면 같은 결과)
+  (다시 만들 때만 `pip install trimesh scipy` 필요, 같은 설정이면 같은 결과)
+- 충돌 조각 꺼내기 (Isaac Sim 드론 설정을 바꿨을 때만, Isaac Sim 필요):
+  `~/isaacsim/python.sh ocean_sim2sim_gazebo/scripts/export_isaac_drone_collision.py --isaac-project ~/data_collection_ur5_gripper`
+  → `models/iris_075/meshes/collision_isaac/` (`hull_*.stl`, 비교용 `raw_reference.stl`, `report.txt`). Isaac Sim 프로젝트의 드론 로더
+  (`drone.add_drone`) 로 같은 USD·같은 덮어쓰기를 한 뒤 PhysX `request_convex_collision_representation` 으로 실제 조각을 받는다
+- **왜 그대로 꺼냈나**: 직접 만든 CoACD 조각은 잡는 높이 폭은 비슷했지만 (87.3 vs 87.6 mm) 아래쪽 모양이 달라 (z = −30 mm 50 vs 41 mm)
+  어긋나게 잡는 케이스가 실패했다. 같은 조각을 넣자 성공 (grasp_demo.md 5 장)
 - 메시 출처·라이선스: `models/iris_075/README.md` (PX4, BSD)
 - SDF 를 문자열로 생성하므로 메시 경로는 `model://iris_075/...`
 - 처음에 Isaac Sim 의 데모용 간이 드론 (`drone_simple.yaml`, 박스·원통) 을 잘못 옮겼다가 바꿨다

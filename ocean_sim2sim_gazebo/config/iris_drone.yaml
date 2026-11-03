@@ -27,8 +27,13 @@ rotors:
     - {pos: [0.13, 0.22, 0.023], mesh: meshes/iris_prop_cw.dae}
     - {pos: [-0.13, -0.20, 0.023], mesh: meshes/iris_prop_cw.dae}
 
-# CoACD convex decomposition of the body mesh (PhysX convex decomposition in Isaac Sim: 32 hulls, 64 vertices)
+# Body collision. source isaac = the hulls Isaac Sim's PhysX actually simulates (convexDecomposition of the body mesh,
+# exported by scripts/export_isaac_drone_collision.py: 32 hulls, <= 45 vertices). Same input as Isaac Sim.
+#   They are thicker than the mesh: grasp waist (finger slab |x| < 13 mm, z = 0) 87.6 mm vs mesh 80.5 mm.
+# source coacd = CoACD here (threshold etc. below; waist 87.3 mm, z = -30 mm 50 mm vs Isaac Sim 41 mm), used before 2026-11-03
 collision:
+  source: isaac
+  isaac_dir: meshes/collision_isaac
   threshold: 0.03             # concavity error
   max_convex_hull: 32
   max_ch_vertex: 64

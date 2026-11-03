@@ -7,7 +7,11 @@ scaled + rotated mesh, 4 fixed rotor visuals, mass 0.78 (body, uniform density o
 (rotor discs). The model also has a DetachableJoint that holds it on a model "drone_anchor" (world-fixed hover):
 attach /drone/attach, detach /drone/detach, state /drone/state (gz topics).
 
-Needs (only to rebuild, not to run the simulation):  pip install trimesh coacd scipy
+Body collision (config collision.source):
+  isaac: the convex hulls Isaac Sim's PhysX cooks for its drone (exported once with Isaac Sim by
+         scripts/export_isaac_drone_collision.py into meshes/collision_isaac/) = the same collision input as Isaac Sim
+  coacd: CoACD decomposition of the mesh made here (no Isaac Sim needed)
+Needs (only to rebuild, not to run the simulation):  pip install trimesh scipy (+ coacd for source coacd)
 Run:  python3 ocean_sim2sim_gazebo/scripts/build_iris_drone.py
 """
 import glob
@@ -31,19 +35,28 @@ def transform(scale, yaw):
 
 
 def build(c):
-    import coacd
     scale, yaw = float(c['scale']), float(c['yaw'])
     T = transform(scale, yaw)
 
-    # ---- body collision: convex decomposition of the scaled + rotated mesh
+    # ---- body collision
     body = trimesh.load(os.path.join(MODEL, c['body']['mesh']))
     body.apply_transform(T)
     k = c['collision']
-    coacd.set_log_level('error')
-    parts = coacd.run_coacd(coacd.Mesh(body.vertices, body.faces), threshold=k['threshold'],
-                            max_convex_hull=k['max_convex_hull'], max_ch_vertex=k['max_ch_vertex'],
-                            decimate=True, preprocess_mode='auto', seed=k['seed'])
-    hulls = [trimesh.Trimesh(v, f).convex_hull for v, f in parts]
+    if k['source'] == 'isaac':
+        # the hulls Isaac Sim's PhysX simulates (scripts/export_isaac_drone_collision.py), drone body frame
+        src = sorted(glob.glob(os.path.join(MODEL, k['isaac_dir'], 'hull_*.stl')))
+        if not src:
+            raise SystemExit(f"no hulls in {k['isaac_dir']}: run export_isaac_drone_collision.py with Isaac Sim first")
+        hulls = [trimesh.load(f).convex_hull for f in src]
+    elif k['source'] == 'coacd':
+        import coacd
+        coacd.set_log_level('error')
+        parts = coacd.run_coacd(coacd.Mesh(body.vertices, body.faces), threshold=k['threshold'],
+                                max_convex_hull=k['max_convex_hull'], max_ch_vertex=k['max_ch_vertex'],
+                                decimate=True, preprocess_mode='auto', seed=k['seed'])
+        hulls = [trimesh.Trimesh(v, f).convex_hull for v, f in parts]
+    else:
+        raise SystemExit(f"collision.source must be isaac or coacd: {k['source']}")
     for old in glob.glob(os.path.join(MODEL, 'meshes', 'collision', 'hull_*.stl')):
         os.remove(old)
     for i, h in enumerate(hulls):

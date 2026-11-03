@@ -1,0 +1,8 @@
+Exported by ocean_sim2sim_gazebo/scripts/export_isaac_drone_collision.py (Isaac Sim PhysX cooked hulls)
+drone config /home/taeung/data_collection_ur5_gripper/isaacsim/config/drone_iris.yaml, USD /home/taeung/data_collection_ur5_gripper/isaacsim/assets/drones/iris/iris.usd, scale 0.75, body frame /World/Drone/body
+/World/Drone/body/body: approximation convexDecomposition, 32 convex(es), 809 vertices
+32 hulls, max 45 vertices; bounds hulls [[-109.9, -180.4, -50.3], [117.2, 181.1, 39.3]] mm, raw [[-107.3, -180.4, -50.3], [117.2, 177.9, 35.0]] mm
+  width in the finger slab (|x| < 13 mm) at z +0 mm: hulls 87.6, raw 80.5 mm
+  width in the finger slab (|x| < 13 mm) at z -10 mm: hulls 87.3, raw 79.1 mm
+  width in the finger slab (|x| < 13 mm) at z -20 mm: hulls 84.8, raw 75.9 mm
+  width in the finger slab (|x| < 13 mm) at z -30 mm: hulls 41.4, raw 35.8 mm
