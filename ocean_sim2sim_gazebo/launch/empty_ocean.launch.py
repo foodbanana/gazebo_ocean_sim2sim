@@ -19,7 +19,12 @@ from launch.actions import RegisterEventHandler
 from launch.event_handlers import OnShutdown
 from launch.substitutions import LaunchConfiguration
 import os
+import tempfile
+import shutil
+import re
 import signal
+
+from ament_index_python.packages import get_package_share_directory
 
 import vrx_gz.launch
 from vrx_gz.model import Model
@@ -33,6 +38,9 @@ def launch(context, *args, **kwargs):
         return arg(name).lower() == 'true'
 
     world_name = os.path.splitext(arg('world'))[0]
+    tmp_dirs = []
+    if arg('wave_gain') or arg('wave_period'):
+        world_name = _world_with_waves(world_name, arg('wave_gain'), arg('wave_period'), tmp_dirs)
     sim_mode = arg('sim_mode')
     robot_urdf = arg('urdf')
     # The boat is always spawned at the world origin.
@@ -56,8 +64,34 @@ def launch(context, *args, **kwargs):
         launch_processes.extend(vrx_gz.launch.competition_bridges(
             world_name_base, flag('competition_mode')))
 
-    launch_processes.append(RegisterEventHandler(OnShutdown(on_shutdown=[OpaqueFunction(function=stop_gazebo)])))
+    launch_processes.append(RegisterEventHandler(OnShutdown(on_shutdown=[
+        OpaqueFunction(function=stop_gazebo),
+        OpaqueFunction(function=lambda _c: [shutil.rmtree(d, ignore_errors=True) for d in tmp_dirs])])))
     return launch_processes
+
+
+def _world_with_waves(world_name, gain, period, tmp_dirs):
+    """Copy of the world with other VRX wavefield gain / period (the vrx::PublisherPlugin message on
+    /vrx/wavefield/parameters; the boat buoyancy and the wave visual both read it). Same file name (= world name, used
+    in the topic names) in a temporary folder, removed on shutdown. docs/waves.md"""
+    src = world_name + '.sdf'
+    if not os.path.isabs(src):
+        src = os.path.join(get_package_share_directory('ocean_sim2sim_gazebo'), 'worlds', src)
+    with open(src) as f:
+        sdf = f.read()
+    for key, val in (('gain', gain), ('period', period)):
+        if not val:
+            continue
+        float(val)                                        # error on a bad number
+        pat = re.compile(r'(key:\s*"' + key + r'"\s*value\s*\{\s*type:\s*DOUBLE\s*double_value:\s*)[-0-9.eE+]+')
+        sdf, n = pat.subn(r'\g<1>' + val, sdf)
+        if n != 1:
+            raise RuntimeError(f'{src}: wavefield parameter "{key}" found {n} times (expected 1)')
+    d = tempfile.mkdtemp(prefix='ocean_sim2sim_world_')
+    tmp_dirs.append(d)
+    with open(os.path.join(d, os.path.basename(src)), 'w') as f:
+        f.write(sdf)
+    return os.path.join(d, os.path.splitext(os.path.basename(src))[0])
 
 
 def stop_gazebo(_context):
@@ -92,6 +126,8 @@ def generate_launch_description():
         ('headless', 'False', 'True to run without GUI'),
         ('paused', 'False', 'True to start paused'),
         ('extra_gz_args', '', 'Additional arguments for gz sim'),
+        ('wave_gain', '', 'VRX wavefield gain (empty = as in the world file; empty_ocean 0.3, calm 0). docs/waves.md'),
+        ('wave_period', '', 'VRX wavefield peak period [s] (empty = as in the world file; empty_ocean 5)'),
     ]
     return LaunchDescription(
         [DeclareLaunchArgument(n, default_value=d, description=desc)

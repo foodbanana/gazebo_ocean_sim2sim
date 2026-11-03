@@ -54,6 +54,8 @@ def launch(context, *args, **kwargs):
             'urdf': urdf_path,
             'headless': arg('headless'),
             'paused': arg('paused'),
+            'wave_gain': arg('wave_gain'),
+            'wave_period': arg('wave_period'),
         }.items())
 
     # 3. robot description
@@ -155,6 +157,8 @@ def generate_launch_description():
         ('xacro_args', '', 'Extra xacro args, e.g. "arm_mount_rpy:=\'0 0 1.57\'"'),
         ('headless', 'False', 'True to run without GUI'),
         ('paused', 'False', 'True to start paused'),
+        ('wave_gain', '', 'VRX wavefield gain (empty = world file value). docs/waves.md'),
+        ('wave_period', '', 'VRX wavefield peak period [s] (empty = world file value)'),
         ('drone_mode', 'px4', 'px4 = PX4 SITL flies the drone (venv + PX4-Autopilot needed); fixed = held on a world anchor'),
         ('drone_motion', 'hover', 'px4: static or hover (sine around the hover point, Isaac Sim collection setting)'),
         ('hover_preset', 'mid', 'px4 hover sine preset: small | mid | big (Isaac Sim drone_iris.yaml)'),
