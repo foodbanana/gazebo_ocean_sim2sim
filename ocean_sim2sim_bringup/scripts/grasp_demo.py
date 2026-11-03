@@ -398,7 +398,16 @@ def run_case(n, case, dc, out_dir, log):
         if moved:     # empty: drone at the default position + drone_offset for this reset (Isaac Sim)
             n.set_scene_params(False, 0.0, np.asarray(n.default_pos) + np.asarray(dc['cases'][case]['drone_offset']))
         try:
-            res = n.call(n.reset_cli, Trigger.Request(), 60.0)
+            # the scene accepts /sim/reset only after its first drone is up (PX4: after the air start, ~20 s sim after
+            # the launch, longer in wall time with the GUI): wait and try again instead of failing
+            t_wait = time.time()
+            while True:
+                res = n.call(n.reset_cli, Trigger.Request(), 120.0)
+                if res.success or 'not ready' not in res.message or time.time() - t_wait > 300:
+                    break
+                if t_wait + 2.5 > time.time():
+                    print('[grasp_demo] scene not ready yet (first drone still starting), waiting ...', flush=True)
+                time.sleep(2.0)
         finally:
             if moved:
                 n.set_scene_params(False, 0.0, n.default_pos)
