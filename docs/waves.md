@@ -53,20 +53,13 @@ mid = big × 0.5, small = big × 0.25 (수집 주력 small, 일부 mid). 사인�
 - 움직임 모양이 다르다: Stewart 는 축마다 정해진 사인파, 보트는 파도 스펙트럼 + 떠밀림
 - Isaac 의 잡기 가능 시간 비율 (기구학만): small 94 %, mid 26 %, big 4.5 % (big 은 시작 자세 충돌 위험으로 수집 안 함)
 
-## 4. 평가 조건 (제안)
+## 4. 평가 조건
 
-| 조건 | world / 인자 | 뜻 |
-|---|---|---|
-| C0 | `world:=empty_ocean_calm` | 파도 없음 = Isaac Sim 고정 테이블과 비교 |
-| W1 | `wave_gain:=0.18` | 상하 움직임 = Isaac Stewart small (수집 주력) |
-| W2 | `wave_gain:=0.36` | 상하 움직임 = Isaac Stewart mid |
-| W3 | `wave_gain:=0.72` | 상하 움직임 = Isaac Stewart big (Isaac 은 수집 안 함) |
-| (참고) | `empty_ocean` 기본 (gain 0.3) | 지금까지 쓴 파도, W1 과 W2 사이 |
-
-모든 조건: PX4 드론 hover mid, 드론 기준 위치 25 점 (seed 0), 지연 0.185 s, 손목 카메라 (+ base_imu 모델이면 켬).
+**정하지 않음 (2026-11-03 사용자 결정)**: 실제 배의 IMU 데이터를 보고, Gazebo 파도 (gain·period·direction) 와 Isaac Sim Stewart 움직임을
+그 데이터에 맞춰 나중에 정한다. 그 전까지는 `world:=empty_ocean_calm` (파도 없음) 과 필요한 gain 을 `wave_gain:=` 으로 직접 준다.
+3 장의 "같은 상하 표준편차가 되는 gain" 은 참고 값.
 
 ## 5. 정해야 할 것
 
 - **보트 떠밀림 → 그대로 둠 (2026-11-03 사용자 결정 (a))**: 보트는 파도에 떠밀리고, world 에 떠 있는 드론과의 거리가 에피소드 중 바뀐다.
   이것이 보려는 현상이고, 이를 다루는 알고리즘 (떠밀림·흔들림 보상) 을 따로 만들 예정. 추진기 자리 유지·리셋 때 제자리 옮기기는 하지 않음
-- 기울기를 Stewart 와 맞출지 (파도 방향·주기를 바꾸면 pitch 가 바뀜), 상하만 맞출지
