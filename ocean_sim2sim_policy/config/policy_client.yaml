@@ -16,6 +16,12 @@ control_hz: 25.0
 # step of the current chunk (10 steps = 0.4 s) at which the next inference starts in the background (the current chunk
 # keeps running). Inference ~0.19 s (~5 steps): with 4 the next chunk arrives around step 9. If late, the last step is held
 replan_steps: 4
+# NEW: observation -> action delay seen by the policy, in sim time (docs/policy.md "추론 지연", 2026-11-03 user decision A).
+#   fixed: a new chunk is used from sim t_obs + fixed_s on (waits if it arrives earlier; late chunks are counted). Gazebo's
+#     RTF drops to ~0.4 in contact, so the wall inference time (~0.13 s) would shrink to ~0.05 s of sim time.
+#   fixed_s 0.185 = Isaac Sim measured round trip with its GUI (docs/policy_inference_desktop.md, RTF ~0.96)
+#   measured: Isaac client behaviour (use the chunk when it arrives)
+latency: {mode: fixed, fixed_s: 0.185}
 # /joint_command rate (sim time), linear interpolation between chunk steps. Teleop 60 Hz (the Gazebo interface applies
 # the newest command once per 30 Hz loop and interpolates 33 ms, as Isaac Sim)
 publish_hz: 60.0

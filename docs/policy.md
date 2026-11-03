@@ -243,3 +243,22 @@ python3 -m pytest src/gazebo_ocean_sim2sim/ocean_sim2sim_policy/test      # 24 p
 - **시간 gap**: 클라이언트는 sim time 으로 돈다. Gazebo 가 RTF 0.58 로 느리면 같은 wall 추론 시간이 sim 에서는 짧아져
   (0.125 × 0.58 ≈ 0.07 s), chunk 가 Isaac 보다 일찍 (2.2 칸 vs 4 칸) 도착한다 → 정책 입장에서 지연이 Isaac 과 다름. 평가 때 맞출지 정할 것
 - RTF 가 떨어지는 이유: 카메라 렌더링 + JAX 추론이 GPU 하나를 같이 씀 (정책 없이 호버 1.00, 드론을 잡고 있을 때 0.43~0.47)
+
+## 추론 지연 (2026-11-03, 사용자 결정 A)
+
+`policy_client.yaml` `latency: {mode: fixed, fixed_s: 0.185}`: 새 chunk 는 sim 시각 t_obs + 0.185 s 부터 쓴다 (먼저 오면 기다리고,
+늦게 오면 `late_chunks` 로 셈). `mode: measured` = Isaac 클라이언트 그대로 (도착하면 바로).
+
+- 이유: 클라이언트는 sim time 으로 도는데, Gazebo 는 로봇이 드론에 닿으면 RTF 가 0.35~0.5 로 떨어진다. 추론은 wall 0.13 s 라
+  sim time 지연이 0.05~0.13 s 로 흔들리고 Isaac (약 0.18 s) 보다 짧아져, sim2sim gap 에 지연 차이가 섞인다
+- 근거: 시뮬레이션 평가에서 실제 지연을 RTF 로 sim 시간으로 바꿔 고정 지연으로 넣는 방식 (Reflex 2026), action chunk 정책을 고정
+  추론 지연으로 평가하고 지연이 결과를 크게 바꿈 (Real-Time Chunking, Physical Intelligence 2025)
+- 0.185 s = Isaac Sim GUI 와 같이 잰 왕복 (`docs/policy_inference_desktop.md`). 실물에서 잰 값으로 바꾸거나 여러 값으로 민감도를 볼 수 있음
+
+| | measured (이전) | fixed 0.185 s |
+|---|---|---|
+| 새 chunk 를 쓰기 시작하는 칸 (중앙) | 2.2 (RTF 0.58) / 3.4 (RTF 1.0) | 4.8~4.9 (RTF 와 무관) |
+| 늦은 chunk | | 0~1 / 에피소드 (첫 추론) |
+
+RTF 가 떨어지는 원인 (2026-11-03 측정): 정책 추론이 아니라 **로봇과 드론의 접촉 계산**. Gazebo + 정책 서버 + 클라이언트는 RTF 1.00 이고,
+정책이 팔을 움직여 드론에 닿은 뒤 0.64 → 0.35 (드론을 잡고 있을 때 0.43~0.47 과 같은 현상). 이전에 본 0.43 은 남아 있던 서버 프로세스 탓

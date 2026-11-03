@@ -53,6 +53,9 @@ def check_config(c, path='config'):
     missing += [f'base_imu.{k}' for k in BASE_IMU if k not in (c.get('base_imu') or {})]
     if missing:
         raise ValueError(f'{path}: missing keys: {missing}')
+    lat = c.get('latency') or {}
+    if lat.get('mode') not in ('measured', 'fixed') or 'fixed_s' not in lat:
+        raise ValueError(f"{path}: latency must be {{mode: measured|fixed, fixed_s: <s>}}: {lat}")
     if not (1 <= int(c['replan_steps'])):
         raise ValueError(f"{path}: replan_steps must be >= 1: {c['replan_steps']}")
     if float(c['max_lead']) >= float(c['desync']):
@@ -426,7 +429,17 @@ class PolicyClient:
         st['chunks'] += 1
         st['infer_wall'].append(w)
         st['server_ms'].append(sms)
-        box, worker = {}, None                       # next inference in the background
+        # latency.mode fixed: a chunk is used only from sim t_obs + fixed_s on (docs/policy.md "추론 지연"): the policy sees
+        # the same observation -> action delay in sim time whatever the RTF (Gazebo slows down in contact -> the wall
+        # inference time would otherwise shrink in sim time). measured = Isaac client behaviour (use on arrival).
+        lat = cfg['latency']
+        fixed = float(lat['fixed_s']) if lat['mode'] == 'fixed' else None
+        st['late'] = 0                               # chunks that arrived after t_obs + fixed_s (delay longer than wanted)
+        if fixed is not None:
+            if self.now() > t_obs + fixed:
+                st['late'] += 1
+            self.wait_sim_until(t_obs + fixed)
+        box, worker, pending = {}, None, None        # next inference in the background, arrived but not due yet
 
         def bg():
             try:
@@ -458,13 +471,18 @@ class PolicyClient:
                 worker = None
                 if 'err' in box:
                     raise box['err']
-                act, t_obs, w, sms = box.pop('res')
+                pending = box.pop('res')
+                if fixed is not None and now > pending[1] + fixed + 1e-9:
+                    st['late'] += 1
+            if pending is not None and (fixed is None or now >= pending[1] + fixed - 1e-9):
+                act, t_obs, w, sms = pending
+                pending = None
                 st['chunks'] += 1
                 st['infer_wall'].append(w)
                 st['server_ms'].append(sms)
                 st['lag_steps'].append((now - t_obs) / dt_c)
             x = (now - t_obs) / dt_c                 # position in the current chunk [steps]
-            if worker is None and x >= K:
+            if worker is None and pending is None and x >= K:
                 worker = threading.Thread(target=bg, daemon=True)
                 worker.start()
             a, i0, held = chunk_step(act, x)
@@ -500,6 +518,7 @@ class PolicyClient:
                'infer_wall_median_s': round(float(np.median(iw)), 3), 'infer_wall_max_s': round(float(np.max(iw)), 3),
                'chunk_arrive_step_median': round(float(np.median(lag)), 2), 'held_frac': round(st['held'] / max(st['sent'], 1), 3),
                'limited_frac': round(st['limited'] / max(st['sent'], 1), 3),
+               'latency': lat['mode'] if fixed is None else f'fixed {fixed:g} s', 'late_chunks': st['late'],
                'gripper_closed': closed, 'gripper_present_end': round(present, 3), 'drone_killed': killed}
         self.log(f'[policy] episode end: {json.dumps(res, ensure_ascii=False)}')
         # extra detail (not printed): per chunk timing, gripper changes
