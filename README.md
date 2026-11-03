@@ -21,6 +21,8 @@ VRX is used as a dependency and is not modified.
 - Ubuntu 24.04, ROS 2 Jazzy, Gazebo Harmonic
 - VRX built in the same workspace
 - `sudo apt install ros-jazzy-xacro ros-jazzy-ur-description ros-jazzy-realsense2-description`
+- PX4 drone (optional): PX4-Autopilot v1.16.0 built with `make px4_sitl_default none` (path given at launch), and a Python
+  venv for pymavlink (below). The system Python is not touched.
 
 ## Build
 
@@ -29,10 +31,16 @@ mkdir -p ~/vrx_ws/src && cd ~/vrx_ws/src
 git clone https://github.com/osrf/vrx.git
 git clone <this repository> gazebo_ocean_sim2sim
 cd ~/vrx_ws
+# Python venv (ROS 2 docs "Using Python Packages with ROS 2"): sees the system / ROS packages, adds pymavlink only
+python3 -m venv --system-site-packages .venv && touch .venv/COLCON_IGNORE
+.venv/bin/python -m pip install pymavlink==2.4.50 fastcrc==0.5.0     # same versions as the Isaac Sim project
 source /opt/ros/jazzy/setup.bash
+source .venv/bin/activate          # in every terminal that builds or launches (deactivate: `deactivate`)
 colcon build --merge-install --symlink-install
 source install/setup.bash
 ```
+
+Remove the venv by deleting `~/vrx_ws/.venv` (nothing else is installed).
 
 ## Run
 
