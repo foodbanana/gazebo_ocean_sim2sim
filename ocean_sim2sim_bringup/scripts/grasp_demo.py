@@ -79,6 +79,9 @@ class Demo(Node):
         self.create_subscription(Odometry, '/drone/odometry', lambda m: setattr(self, 'drone', m), 50)
         self.create_subscription(Contacts, '/drone/contacts', self._on_contacts, 50)
         self.create_subscription(String, '/drone/state', lambda m: setattr(self, 'drone_state', m.data), 10)
+        # PX4 drone (drone_mode px4): motors on = PX4 armed (Isaac Sim judge 'armed' = PX4 armed flag)
+        self.px4 = None
+        self.create_subscription(String, '/drone/px4/state', lambda m: setattr(self, 'px4', json.loads(m.data)), 10)
         self.arm_pub = self.create_publisher(JointState, '/joint_command', 10)
         self.grip_pub = self.create_publisher(Float64, '/gripper/command', 10)
         self.reset_cli = self.create_client(Trigger, '/sim/reset')
@@ -224,7 +227,9 @@ class Episode:
         while rclpy.ok() and n.now() < self.next_tick:
             time.sleep(0.0005)
         self.next_tick += self.dt
-        if n.drone_state == 'detached' and self.armed and self.t_kill is not None:
+        if n.px4 is not None:
+            self.armed = bool(n.px4.get('armed'))
+        elif n.drone_state == 'detached' and self.armed and self.t_kill is not None:
             self.armed = False
         o = self.observe()
         self.judge.update(o)
@@ -404,7 +409,8 @@ def run_case(n, case, dc, out_dir, log):
     else:
         log(f'\n===== case {case} =====')
     t0 = time.time()
-    while n.drone is None or n.drone_state != 'attached':
+    # fixed drone: hanging on its anchor; PX4 drone: flying (released after the air start, armed)
+    while n.drone is None or (n.drone_state != 'attached' if n.px4 is None else not n.px4.get('armed')):
         if time.time() - t0 > 10:
             raise RuntimeError('no drone odometry / drone not attached')
         time.sleep(0.05)

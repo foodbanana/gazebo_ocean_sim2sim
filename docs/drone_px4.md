@@ -1,0 +1,90 @@
+# PX4 SITL 드론 (Isaac Sim 과 같은 연결·추력 모델)
+
+작성: 2026-11-03 · 패키지 `ocean_sim2sim_drone`
+
+Isaac Sim (`data_collection_ur5_gripper` `docs/drone_flight.md` 13·14장) 의 PX4 드론을 Gazebo 로 옮겼다.
+PX4 v1.16.0 실제 펌웨어가 드론을 날리고, MAVLink 연결·가상 센서·추력 모델·PX4 파라미터는 Isaac Sim 코드를 그대로 옮겼다.
+
+## 1. 구조
+
+```text
+ Gazebo (물리 240 Hz)                              px4_bridge_node (Python venv)                 PX4 SITL v1.16.0
+ DroneLockstep 플러그인 (C++)  ── TCP 4570 ──▶  2 스텝마다 (120 Hz) 상태 받음         ── TCP 4560 ──▶ EKF2 (모션캡처)
+   상태 보내고 응답까지 기다림 ◀── 몸체 힘·토크 ──  가상 센서 (IMU 자세 차분, 기압, 지자기,   lockstep     위치→자세→각속도
+   (lockstep), 매 스텝 적용                          모션캡처 100 Hz·20 ms·1 mm/0.3°)          ◀── 모터 u ──
+                                                    모터 u → ω = 1000u + 100 → 지연 → kω²
+ scene_node: /sim/reset, /sim/drone_kill ──────▶   PX4Commander (offboard 20 Hz)        ── UDP 14540 ─▶
+                                                    CLI drone_cmd.py (UDP 14600)
+```
+
+| 파일 | 역할 | 출처 |
+|---|---|---|
+| `src/DroneLockstep.cc` | Gazebo 시스템: 1/120 s 마다 상태 보내고 응답 (힘·토크) 까지 기다림, 매 스텝 적용 | 새로 |
+| `ocean_sim2sim_drone/flight.py` | 추력 모델 (한 스텝 지연, 모터 지연 12.5/25 ms, kω², 반토크, 공기저항) | Isaac `drone_flight.py` |
+| `ocean_sim2sim_drone/sensors.py`, `pegasus_geo_mag.py` | 가상 센서 (같은 seed 면 Isaac 과 값이 같음) | Isaac `px4_sensors.py` (Pegasus, BSD-3) |
+| `ocean_sim2sim_drone/px4_link.py` | PX4 실행·재시작, MAVLink HIL lockstep, PX4 파라미터 | Isaac `px4_bridge.py` |
+| `ocean_sim2sim_drone/commander.py` | Offboard 목표·arm·kill, 사인파 hover (small/mid/big) | Isaac `drone_cmd.py`, `drone_flight.py` |
+| `scripts/px4_bridge_node.py` | ROS 노드: 서비스 `/drone/px4/{restart,arm,kill,status}`, `/drone/px4/reference_cmd`, `/drone/px4/state` | 새로 |
+| `config/drone_px4.yaml` | 포트, 모션캡처·EKF2 파라미터, hover 프리셋 (값마다 출처 주석) | Isaac `px4_sitl.yaml`, `drone_iris.yaml` |
+
+드론 물리값 (질량 0.8 kg, 무게중심, 관성, 로터 위치·방향, 추력 상수) 은 Isaac Sim PhysX 에서 꺼낸
+`ocean_sim2sim_gazebo/models/iris_075/meshes/collision_isaac/isaac_flight.yaml` 하나를 Gazebo 모델·브리지·PX4 파라미터가 같이 쓴다.
+PX4 파라미터: `CA_ROTORi_PX/PY` = 로터 위치, `MC_ROLLRATE_K` 0.2456, `MC_PITCHRATE_K`·`MC_YAWRATE_K` 0.1484 (Isaac 로그와 같음).
+
+## 2. 실행
+
+```bash
+cd ~/vrx_ws && source /opt/ros/jazzy/setup.bash && source .venv/bin/activate && source install/setup.bash   # venv: README
+ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py                   # drone_mode:=px4 drone_motion:=hover hover_preset:=mid (기본)
+ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py drone_mode:=fixed # PX4 없이 world 고정 드론 (예전)
+python3 src/gazebo_ocean_sim2sim/ocean_sim2sim_drone/scripts/drone_cmd.py status   # goto x y z | hold | land | kill
+```
+
+## 3. 공중 시작 (리셋)
+
+바다에는 바닥이 없어 Isaac Sim 처럼 바닥에서 이륙하지 않는다 (2026-11-03 사용자 결정 C). `/sim/reset`:
+
+1. PX4 armed 면 kill → 드론·앵커 지움 → 팔 시작 자세
+2. 드론을 새 위치에 앵커로 고정해 띄움
+3. `/drone/px4/restart`: PX4 새로 시작 (lockstep 연결 약 2 s) + EKF 대기 5 s (Isaac 과 같음)
+4. `/drone/px4/arm`: PX4 원점을 실제 위치에 맞추고 Offboard·arm (약 2 s)
+5. 목표를 10 cm 위로 → PX4 이륙 램프로 추력이 오름 → **총추력 = 무게 (7.85 N) 인 순간 앵커를 놓고** 목표를 원래 위치로
+6. 안정 5 s (Isaac 과 같음) → 드론 움직임 시작 (hover mid, seed = 리셋 seed + 1,000,000, Isaac 과 같음)
+
+| 항목 | Gazebo | Isaac Sim |
+|---|---|---|
+| 리셋 시간 (sim) | 22.6 s | 24 s |
+| 놓은 직후 | 높이 −23 mm, 앞으로 +10 cm 쏠렸다 약 4 s 에 돌아옴 | (바닥 이륙) 앞으로 최대 20 cm 쏠렸다 3 s 에 돌아옴 |
+| 안정 뒤 위치 오차 | 축마다 7~10 mm | 6~7 mm |
+| 호버 RMS (5 s 이후) | 14~24 mm | 19.5 mm |
+| RTF | 1.00 | 0.96 |
+
+- 놓는 순간을 일찍 (무게의 90 %, 목표 +3 cm) 하면 높이가 −70 mm 까지 떨어져 더 나빴다
+- 앞쪽 쏠림: 앵커에 묶인 동안 PX4 자세 적분이 쌓이는 것으로 보임 (놓기 직전 앞뒤 로터 속도 차이가 기하 균형보다 큼)
+
+## 4. 파지 데모 (잔잔한 물, drone_motion static = Isaac grasp_demo, 2026-11-03)
+
+| 케이스 | Isaac Sim (PX4) | Gazebo (PX4) | 기대대로 |
+|---|---|---|---|
+| success | held. 밀림 9.2 mm, 접촉력 27 N, 내려앉음 1.0 mm, 회전 0.9° | held. 밀림 10.6 mm, **48 N**, 0.02 mm, 0.2° | 맞음 |
+| offset_y | held. 밀림 4.2 mm, 0.3 mm, 0.5° | held. 3.5 mm, 2.1 mm, 0.4° | 맞음 |
+| offset_x | held. 밀림 4.4 mm, 1.4 mm, 1.7° | held. 10.3 mm, 2.2 mm, **7.0°** | 맞음 |
+| empty | no_grasp_empty (64.1°) | no_grasp_empty (65.0°) | 맞음 |
+| miss | no_grasp_empty (드론이 32 mm 밀려 빠짐) | **잡힘** (33°, 밀림 19.9 mm) → held | 틀림 |
+
+- 잡은 채 모터 1 s: 드론 흔들림 0.03 mm (Isaac 0.03 mm), 손가락 힘 흔들림 0.16 N (Isaac 0.05 N)
+- 고정 드론일 때와 달리 드론이 밀린다 (밀림 3.5~20 mm). miss 는 Isaac 보다 덜 밀려 (20 vs 32 mm) 몸체 아랫부분이 잡힘 → gap
+- 접촉력이 Isaac 보다 크다 (33~48 N vs 27 N)
+
+## 5. 보트 IMU (`/base/imu`)
+
+VRX 기본 WAM-V IMU 그대로 (사용자 결정 2026-11-03): `wamv/base_link` 기준 (0.3, −0.2, 1.3), 100 Hz, VRX 잡음 (자이로 0.009 rad/s 등),
+`sensor_msgs/Imu` 비력 (정지 = +9.81). Isaac Sim 학습 데이터 (`/base/imu` 120 Hz, 잡음 없음, 로봇 base 강체) 와 주기·잡음·위치가 다르다 → gap.
+frame_id 는 Gazebo 이름 (`wamv/wamv/imu_wamv_link/imu_wamv_sensor`, Isaac `imu_link`). `/base/odom` 은 아직 없음.
+
+## 6. 해 보고 고친 것
+
+- **rclpy MultiThreadedExecutor 가 서비스 대기 중 빈 루프를 돌아 GIL 을 차지** → lockstep 이 10 배 느려짐 (RTF 0.07). EventsExecutor 로 1.00
+- **Gazebo 시간은 정수 ns**: 1/240 s 두 번이 1/120 s 와 같지 않아 가끔 한 번 건너뜀 (12.5 ms) → 플러그인이 스텝 수를 셈
+- **arm 직후 바로 놓으면 떨어짐**: PX4 가 착지 상태로 보고 공회전 (ω 101 rad/s) → 이륙 램프로 추력을 올린 뒤 놓음
+- 이전 시험의 Gazebo 가 남아 두 서버가 돌면 모든 것이 느려지고 컨트롤러가 안 뜸 → 종료 확인
