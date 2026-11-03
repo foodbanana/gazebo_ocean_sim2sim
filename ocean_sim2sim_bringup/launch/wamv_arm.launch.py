@@ -120,9 +120,18 @@ def launch(context, *args, **kwargs):
         package='ocean_sim2sim_interface',
         executable='scene_node',
         output='screen',
-        parameters=[arg('interface_config'), {'world': world}])
-
-    return [cleanup, sim, rsp, spawner, interface, stop_on_interface_exit, sensor_bridge, scene_bridge, scene]
+        parameters=[arg('interface_config'), {'world': world, 'drone_mode': arg('drone_mode'),
+                                              'drone_motion': arg('drone_motion'), 'hover_preset': arg('hover_preset')}])
+    nodes = [cleanup, sim, rsp, spawner, interface, stop_on_interface_exit, sensor_bridge, scene_bridge, scene]
+    if arg('drone_mode') == 'px4':
+        # PX4 SITL bridge (ocean_sim2sim_drone, docs/drone_px4.md). Needs the Python venv with pymavlink: launch from a
+        # terminal where ~/vrx_ws/.venv is activated (README). It starts PX4 itself (px4_dir).
+        nodes.append(Node(
+            package='ocean_sim2sim_drone',
+            executable='px4_bridge_node.py',
+            output='screen',
+            parameters=[{'px4_dir': arg('px4_dir')}]))
+    return nodes
 
 
 def generate_launch_description():
@@ -140,6 +149,10 @@ def generate_launch_description():
         ('xacro_args', '', 'Extra xacro args, e.g. "arm_mount_rpy:=\'0 0 1.57\'"'),
         ('headless', 'False', 'True to run without GUI'),
         ('paused', 'False', 'True to start paused'),
+        ('drone_mode', 'px4', 'px4 = PX4 SITL flies the drone (venv + PX4-Autopilot needed); fixed = held on a world anchor'),
+        ('drone_motion', 'hover', 'px4: static or hover (sine around the hover point, Isaac Sim collection setting)'),
+        ('hover_preset', 'mid', 'px4 hover sine preset: small | mid | big (Isaac Sim drone_iris.yaml)'),
+        ('px4_dir', '~/PX4-Autopilot', 'PX4-Autopilot v1.16.0 directory (built: make px4_sitl_default none)'),
     ]
     return LaunchDescription(
         [DeclareLaunchArgument(n, default_value=d, description=desc) for n, d, desc in args]

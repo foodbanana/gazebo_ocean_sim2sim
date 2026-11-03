@@ -132,6 +132,20 @@ class SceneNode(Node):
             raise RuntimeError(f'drone_targets_base needs 3 values per name: {len(flat)} values, {len(names)} names')
         self.targets = [(n, flat[3 * i:3 * i + 3]) for i, n in enumerate(names)]
         self.drone_offset = float(p('drone_offset', 0.03).value)
+        # drone: fixed = held on the world anchor (no flight); px4 = PX4 SITL flies it (ocean_sim2sim_drone px4_bridge
+        # node). PX4 air start (docs/drone_px4.md): anchored -> PX4 restart (+ EKF wait) -> arm (Offboard) -> target
+        # lifted by px4_release_lift -> release the anchor when the rotor thrust reaches px4_release_thrust -> target
+        # back to the hover point -> settle_time -> drone motion (static / hover sine, Isaac Sim presets)
+        self.drone_mode = str(p('drone_mode', 'fixed').value)
+        if self.drone_mode not in ('fixed', 'px4'):
+            raise RuntimeError(f'drone_mode must be fixed or px4: {self.drone_mode}')
+        self.px4_lift = float(p('px4_release_lift', 0.10).value)
+        self.px4_release_thrust = float(p('px4_release_thrust', 0.8 * 9.81).value)
+        self.px4_release_timeout = float(p('px4_release_timeout', 20.0).value)
+        self.settle_time = float(p('settle_time', 5.0).value)
+        self.drone_motion = str(p('drone_motion', 'static').value)
+        self.hover_preset = str(p('hover_preset', 'mid').value)
+        self.px4_state = None
         seed = int(p('seed', -1).value)
         self.seed = seed if seed >= 0 else int(time.time())   # -1: start time (different every session, as Isaac Sim)
         self.reset_count = 0
@@ -158,6 +172,11 @@ class SceneNode(Node):
         self.pub_arm = self.create_publisher(JointTrajectory, '/arm_controller/joint_trajectory', 10)
         self.pub_grip = self.create_publisher(JointTrajectory, '/gripper_controller/joint_trajectory', 10)
         self.create_service(Trigger, '/sim/drone_kill', self._on_kill, callback_group=self.cb)
+        if self.drone_mode == 'px4':
+            self.create_subscription(String, '/drone/px4/state', self._on_px4_state, 10, callback_group=self.cb)
+            self.px4_cli = {n: self.create_client(Trigger, f'/drone/px4/{n}', callback_group=self.cb)
+                            for n in ('restart', 'arm', 'kill')}
+            self.pub_ref = self.create_publisher(String, '/drone/px4/reference_cmd', 10)
         self.create_service(Trigger, '/sim/reset', self._on_reset, callback_group=self.cb)
         self.get_logger().info(f'seed {self.seed}, {len(self.targets)} drone targets'
                                + ('' if self.use_targets else ' (not used: drone_pos_base)')
@@ -182,6 +201,64 @@ class SceneNode(Node):
 
     def _on_drone_state(self, msg):
         self.attached = (msg.data == 'attached')
+
+    def _on_px4_state(self, msg):
+        self.px4_state = json.loads(msg.data)
+
+    # ---------------------------------------------------------------- PX4 drone
+    def _px4_call(self, name, timeout=180.0):
+        cli = self.px4_cli[name]
+        if not cli.wait_for_service(timeout_sec=10.0):
+            raise RuntimeError(f'/drone/px4/{name} not available (px4_bridge node, drone_mode px4)')
+        fut = cli.call_async(Trigger.Request())
+        t0 = time.time()
+        while not fut.done():
+            if time.time() - t0 > timeout:
+                raise RuntimeError(f'/drone/px4/{name}: no answer in {timeout:g} s')
+            time.sleep(0.01)
+        res = fut.result()
+        if not res.success:
+            raise RuntimeError(f'/drone/px4/{name} failed: {res.message[:300]}')
+        return json.loads(res.message) if res.message.startswith('{') else res.message
+
+    def _px4_reference(self, mode, p0, preset=None, seed=None):
+        cmd = {'mode': mode, 'p0': [float(v) for v in p0]}
+        if preset is not None:
+            cmd['preset'] = preset
+        if seed is not None:
+            cmd['seed'] = int(seed)
+        self.pub_ref.publish(String(data=json.dumps(cmd)))
+        return cmd
+
+    def _px4_start(self, pos, motion_seed, phases):
+        """Air start of the anchored drone at pos (world). Returns info for the response."""
+        t = self.now()
+        r = self._px4_call('restart')
+        phases['px4_restart'], t = self.now() - t, self.now()
+        self._px4_call('arm')
+        phases['px4_arm'], t = self.now() - t, self.now()
+        p = list(pos)
+        self._px4_reference('static', [p[0], p[1], p[2] + self.px4_lift])
+        if not self.wait_sim(self.px4_release_timeout,
+                             until=lambda: (self.px4_state or {}).get('thrust_sum', 0.0) >= self.px4_release_thrust):
+            raise RuntimeError(f'PX4 thrust did not reach {self.px4_release_thrust:.2f} N in {self.px4_release_timeout:g} s '
+                               f'(state {self.px4_state and self.px4_state.get("thrust_sum")})')
+        thrust = self.px4_state['thrust_sum']
+        self.pub_detach.publish(Empty())
+        self._px4_reference('static', p)
+        if not self.wait_sim(2.0, until=lambda: self.attached is False):
+            raise RuntimeError('drone did not report "detached" after the release')
+        phases['px4_release'], t = self.now() - t, self.now()
+        self.wait_sim(self.settle_time)
+        phases['settle'], t = self.now() - t, self.now()
+        st = self.px4_state or {}
+        err = [round(a - b, 4) for a, b in zip(st.get('true_position', p), p)]
+        if self.drone_motion == 'hover':
+            ref = self._px4_reference('hover', p, self.hover_preset, motion_seed)
+        else:
+            ref = self._px4_reference('static', p)
+        return {'px4_run_dir': os.path.basename(r.get('run_dir', '')) if isinstance(r, dict) else None,
+                'release_thrust_n': round(thrust, 3), 'settle_error': err, 'drone_ref': ref}
 
     # ---------------------------------------------------------------- scene
     def mean_base(self):
@@ -230,6 +307,10 @@ class SceneNode(Node):
             self._spawn('drone_anchor', ANCHOR_SDF, pos, yaw)
             self._spawn('drone', self.drone_sdf, pos, yaw)
             self.wait_sim(2.0, until=lambda: self.attached is True)
+            if self.drone_mode == 'px4':
+                ph = {}
+                px4 = self._px4_start(pos, self.seed + 1_000_000, ph)
+                self.get_logger().info(f'PX4 drone flying: {px4}, phases {ph}')
             self.spawned = True           # only now: /sim/reset and /sim/drone_kill are accepted
         finally:
             self.busy = False
@@ -304,6 +385,10 @@ class SceneNode(Node):
             # 2. remove the drone (and anchor). Detach FIRST and wait until Gazebo has done it: removing the
             #    drone while its DetachableJoint still holds it crashed Gazebo (DART WeldJointConstraint on a
             #    deleted body, segfault).
+            if self.drone_mode == 'px4' and (self.px4_state or {}).get('armed'):
+                self._px4_call('kill')         # motors off first (Isaac Sim: kill -> teleport -> PX4 restart)
+                if not self.wait_sim(2.0, until=lambda: not (self.px4_state or {}).get('armed')):
+                    raise RuntimeError('PX4 still armed 2 s after kill')
             if self.attached is not False:
                 self.pub_detach.publish(Empty())
                 if not self.wait_sim(2.0, until=lambda: self.attached is False):
@@ -328,6 +413,11 @@ class SceneNode(Node):
             self._spawn('drone', self.drone_sdf, pos, yaw)
             attached = self.wait_sim(2.0, until=lambda: self.attached is True)
             phases['spawn_drone'], t = self.now() - t, self.now()
+            px4 = None
+            if self.drone_mode == 'px4':
+                # hover sine seed: reset seed + 1,000,000 (Isaac Sim sim_reset)
+                px4 = self._px4_start(pos, self.seed + k + 1_000_000, phases)
+                t = self.now()
             # 6. commands again
             self._hold(False)
             self.reset_count += 1
@@ -339,6 +429,7 @@ class SceneNode(Node):
                     'mean_robot_base': [round(v, 5) for v in base],
                     'init_pose': self.init_pose, 'drone_attached': attached,
                     'phases': {k2: round(v, 3) for k2, v in phases.items()},
+                    'drone_mode': self.drone_mode, 'px4': px4,
                     'sim_time': round(self.now(), 4), 'sim_s': round(self.now() - t0, 3), 'wall_s': round(time.time() - w0, 3)}
             res.success = True
             res.message = json.dumps(info)
@@ -354,6 +445,17 @@ class SceneNode(Node):
 
     def _on_kill(self, req, res):
         t = self.get_clock().now().nanoseconds * 1e-9
+        if self.drone_mode == 'px4':
+            try:
+                info = self._px4_call('kill', timeout=10.0)
+                res.success = True
+                res.message = json.dumps({'sim_time': t, 'px4': 'kill', 'hover_freeze': (info or {}).get('reference', {})
+                                          .get('freeze') if isinstance(info, dict) else None})
+                self.get_logger().info(f'drone motors off (PX4 kill) at sim time {t:.3f} s')
+            except Exception as e:  # noqa: BLE001
+                res.success = False
+                res.message = json.dumps({'sim_time': t, 'error': str(e)})
+            return res
         if not self.spawned or self.attached is False:
             res.success = False
             res.message = json.dumps({'sim_time': t, 'error': 'drone is not held (not spawned or already off)'})
