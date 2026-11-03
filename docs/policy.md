@@ -226,3 +226,20 @@ python3 -m pytest src/gazebo_ocean_sim2sim/ocean_sim2sim_policy/test      # 24 p
   (닫기 → auto-kill → held 3/3), 사람 모터 정지 기다림 (held), 보호 정지 (stop protective_stop, 이벤트 기록)
 - `grasp_demo.py` 를 `observe.py` 로 바꾼 뒤 옛 코드와 같은 가짜 입력에서 관측 dict·힘·TCP/드론 자세·armed 가 같음
 - **Gazebo + 실제 정책 서버 통합 시험은 아직** (사용자가 함)
+
+## 연결 시험 (2026-11-03, 지금 체크포인트 `pi05_ur5/full_first13_10k/9999`, third view 자리 = 검은 이미지)
+
+카메라 2 대용 체크포인트라 성공률은 의미 없음 (배관 확인만). 잔잔한 물, PX4 드론 hover mid, 25 점 목록, 2 에피소드 × 30 s.
+
+| 항목 | 결과 | Isaac Sim |
+|---|---|---|
+| 서버 + Gazebo GPU 메모리 | 9.9 GB / 16 GB | 정책 11.8 GB (Isaac GUI 포함) |
+| 추론 왕복 (wall) | 중앙 0.125 s, 최대 0.151 s | 0.18~0.19 s |
+| `/joint_command` | 30 s 에 1790 개 (약 60 Hz) | 60 Hz |
+| 새 chunk 도착 칸 (중앙) | 2.2 칸 | 약 4 칸 |
+| RTF (정책 실행 중) | **0.58** | 0.96 |
+| 결과 | 0/2 (접근 실패), 그리퍼 열고 닫기 반복 (Isaac 에서도 본 약점) | |
+
+- **시간 gap**: 클라이언트는 sim time 으로 돈다. Gazebo 가 RTF 0.58 로 느리면 같은 wall 추론 시간이 sim 에서는 짧아져
+  (0.125 × 0.58 ≈ 0.07 s), chunk 가 Isaac 보다 일찍 (2.2 칸 vs 4 칸) 도착한다 → 정책 입장에서 지연이 Isaac 과 다름. 평가 때 맞출지 정할 것
+- RTF 가 떨어지는 이유: 카메라 렌더링 + JAX 추론이 GPU 하나를 같이 씀 (정책 없이 호버 1.00, 드론을 잡고 있을 때 0.43~0.47)
