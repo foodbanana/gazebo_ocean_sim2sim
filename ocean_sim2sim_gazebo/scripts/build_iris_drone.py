@@ -84,6 +84,15 @@ def build(c):
         d = p - com
         I += Ic + m * (np.dot(d, d) * np.eye(3) - np.outer(d, d))
 
+    # ---- flight values from Isaac Sim (mass_properties: isaac): the PhysX mass, COM, inertia and rotor positions of the
+    #      flying drone (scripts/export_isaac_drone_collision.py -> isaac_flight.yaml), so it flies like the Isaac Sim one
+    if c.get('mass_properties', 'computed') == 'isaac':
+        with open(os.path.join(MODEL, c['isaac_flight'])) as f:
+            fl = yaml.safe_load(f)
+        M, com, I = float(fl['mass']), np.array(fl['com']), np.array(fl['inertia_about_com'])
+        mesh_by_dir = {d: m for d, m in c['rotors']['mesh_by_direction'].items()}
+        rotors = [(np.array(r['position']), mesh_by_dir[int(r['direction'])]) for r in fl['rotors']]
+
     # ---- SDF
     rgb = ' '.join(f'{v:g}' for v in c['body']['color'])
     yaw_s = f'{yaw:.6f}'

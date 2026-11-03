@@ -16,11 +16,20 @@ body:
   mass: 0.78
   color: [0.2, 0.2, 0.2]
 
+# Mass, COM, inertia and rotor positions: isaac = the values Isaac Sim's PhysX uses for its flying drone
+# (meshes/collision_isaac/isaac_flight.yaml, exported with scripts/export_isaac_drone_collision.py; also read by the PX4
+# bridge for thrust and PX4 rotor geometry). computed = from the hulls + rotor discs below (before 2026-11-03).
+# Isaac Sim rotors (body frame, mm): 0 (103.2, -155.1) dir -1, 1 (-93.8, 164.0) -1, 2 (103.7, 152.4) +1, 3 (-93.4, -166.5) +1
+#   (the PX4 Gazebo Iris visuals below were at +-97.5 / +-150..165: different, so rotors now sit at the Isaac Sim points)
+mass_properties: isaac
+isaac_flight: meshes/collision_isaac/isaac_flight.yaml
+
 # rotor discs (visual only, fixed). Positions / meshes of the original Iris model (before scale and yaw)
 rotors:
   mass: 0.005                 # each
   radius: 0.128               # for the disc inertia
   thickness: 0.005
+  mesh_by_direction: {-1: meshes/iris_prop_ccw.dae, 1: meshes/iris_prop_cw.dae}   # Isaac Sim rotor direction -> visual
   list:
     - {pos: [0.13, -0.22, 0.023], mesh: meshes/iris_prop_ccw.dae}
     - {pos: [-0.13, 0.20, 0.023], mesh: meshes/iris_prop_ccw.dae}
