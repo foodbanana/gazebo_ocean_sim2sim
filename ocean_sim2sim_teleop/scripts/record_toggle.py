@@ -18,8 +18,9 @@
 #     Requests that arrive during a reset / stop / kill are dropped.
 #   Topics: config/recorder.yaml (state topics need a publisher before recording; image topics RELIABLE).
 #     /base/imu and /base/odom are recorded (boat motion). Plot the IMU of a bag: plot_bag_imu.py <bag>
-#   Bags: --bag-dir (default ~/ocean_sim2sim_bags), never inside the repo. Not deleted automatically (about 1.5 GB per
-#     30 s with the wrist camera in Isaac; check df -h).
+#   Bags: --bag-dir (default: ocean_gazebo_bags/ at the top of this repository, git-ignored, like bags/ in the Isaac
+#     repo; found from the workspace: <ws>/install -> <ws>/src/**/ocean_sim2sim_teleop/package.xml -> its parent).
+#     Not deleted automatically (about 1.5 GB per 30 s with the wrist camera in Isaac; check df -h).
 #
 #   Run (sim and teleop node running):
 #       ros2 run ocean_sim2sim_teleop record_toggle.py <task name> [--bag-dir DIR]
@@ -65,6 +66,19 @@ def say(*args, **kwargs):
 def default_config():
     from ament_index_python.packages import get_package_share_directory
     return os.path.join(get_package_share_directory('ocean_sim2sim_teleop'), 'config', 'recorder.yaml')
+
+
+def default_bag_dir():
+    """<repository>/ocean_gazebo_bags. The repository = parent of the ocean_sim2sim_teleop source package, found from the
+    install prefix (<ws>/install -> <ws>/src). Not found (e.g. installed elsewhere) -> error: give --bag-dir."""
+    from ament_index_python.packages import get_package_prefix
+    prefix = get_package_prefix('ocean_sim2sim_teleop')
+    ws = os.path.dirname(prefix) if os.path.basename(prefix) == 'install' else os.path.dirname(os.path.dirname(prefix))
+    for root, dirs, files in os.walk(os.path.join(ws, 'src')):
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('build', 'install', 'log', 'ocean_gazebo_bags')]
+        if os.path.basename(root) == 'ocean_sim2sim_teleop' and 'package.xml' in files:
+            return os.path.join(os.path.dirname(root), 'ocean_gazebo_bags')
+    raise SystemExit(f"[ERROR] source of ocean_sim2sim_teleop not found under {ws}/src: give --bag-dir")
 
 
 def load_config(path):
@@ -405,11 +419,11 @@ def _raise_interrupt(signum, frame):
 def main():
     ap = argparse.ArgumentParser(description="rosbag2 episode recorder (r reset + record / stop, k drone off, d discard, q quit)")
     ap.add_argument('task_name', nargs='?', default='', help='appended to the bag name (same settings = same task name)')
-    ap.add_argument('--bag-dir', default='~/ocean_sim2sim_bags', help='where the bags go (default ~/ocean_sim2sim_bags)')
+    ap.add_argument('--bag-dir', default=None, help='where the bags go (default: <repository>/ocean_gazebo_bags)')
     ap.add_argument('--config', default=None, help='topics (default: this package config/recorder.yaml)')
     args = ap.parse_args()
     task_name = args.task_name
-    bag_dir = os.path.abspath(os.path.expanduser(args.bag_dir))
+    bag_dir = os.path.abspath(os.path.expanduser(args.bag_dir)) if args.bag_dir else default_bag_dir()
 
     if shutil.which('ros2') is None:
         say("[ERROR] ros2 not found: source ROS 2 and the workspace")

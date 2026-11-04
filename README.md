@@ -257,10 +257,10 @@ rosbag2 bags with the boat IMU and base odometry.
 ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py drone_motion:=rc rc_port:=/dev/ttyACM0
 # terminal 2: arm teleop (XRoboToolkit PC service running, headset app WORKING, both controllers sent)
 ros2 run ocean_sim2sim_teleop xr_teleop_node.py
-# terminal 3: recorder (keys r / k / d / q; controller A record, B reset, X drone motors off). Bags: ~/ocean_sim2sim_bags
+# terminal 3: recorder (keys r / k / d / q; controller A record, B reset, X drone motors off). Bags: ocean_gazebo_bags/ in this repo (git-ignored)
 ros2 run ocean_sim2sim_teleop record_toggle.py <task name>
 # afterwards: boat IMU / base motion of a bag
-ros2 run ocean_sim2sim_teleop plot_bag_imu.py ~/ocean_sim2sim_bags/<bag> --csv
+ros2 run ocean_sim2sim_teleop plot_bag_imu.py ocean_gazebo_bags/<bag> --csv
 ```
 
 Without the devices: `ros2 run ocean_sim2sim_teleop check_xr_teleop.py` (scripted controller against the running sim) and

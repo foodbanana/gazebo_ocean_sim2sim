@@ -59,10 +59,10 @@ ros2 run ocean_sim2sim_teleop xr_teleop_node.py
 ros2 run rqt_image_view rqt_image_view /cam/wrist/color/image_raw
 
 # 터미널 4: 녹화 (텔레옵 노드를 띄운 뒤)
-ros2 run ocean_sim2sim_teleop record_toggle.py <작업명>          # bag: ~/ocean_sim2sim_bags/ (--bag-dir 로 바꿈)
+ros2 run ocean_sim2sim_teleop record_toggle.py <작업명>          # bag: 이 레포의 ocean_gazebo_bags/ (git 제외, --bag-dir 로 바꿈)
 
 # 녹화 뒤 IMU 보기
-ros2 run ocean_sim2sim_teleop plot_bag_imu.py ~/ocean_sim2sim_bags/<bag 이름> [--show] [--csv]
+ros2 run ocean_sim2sim_teleop plot_bag_imu.py ~/vrx_ws/src/gazebo_ocean_sim2sim/ocean_gazebo_bags/<bag 이름> [--show] [--csv]
 ```
 
 ### 버튼·키 (Isaac 과 같음)
@@ -101,7 +101,7 @@ ros2 run ocean_sim2sim_teleop plot_bag_imu.py ~/ocean_sim2sim_bags/<bag 이름> 
 
 - 드론 (위치, 조종기 입력) 은 녹화하지 않는다 (Isaac 결정 2026-10-08). `episode.json` 에 리셋 응답 (seed, 드론 기준 위치, 공중 시작 단계 시간) 과 모터 정지 시각
 - 녹화 시작 전에 상태 토픽마다 발행자가 있는지 확인한다 (없으면 녹화하지 않음)
-- bag 은 레포 밖 (`~/ocean_sim2sim_bags`) 에 쌓이고 자동으로 지우지 않는다
+- bag 은 레포 최상위 `ocean_gazebo_bags/` 에 쌓인다 (`.gitignore`, Isaac 레포의 `bags/` 와 같음). 자동으로 지우지 않는다 (`df -h` 확인)
 
 ## 5. Isaac 과 다른 점
 
