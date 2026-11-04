@@ -18,7 +18,7 @@ Changed for Gazebo / the next policies (docs/policy.md "Isaac Sim 과 다른 점
     t_obs is also limited to the latest IMU stamp (so the window is complete), which with the IMU arriving before the
     images leaves t_obs = the image stamp as in Isaac
   - /sim/reset: retried while the scene answers "not ready" (first drone still starting), as grasp_demo.py
-  - optional hooks for the evaluation runner (stop_check, trace) and per-chunk inference timing in the result
+  - per-chunk inference timing in the result
 """
 import json
 import math
@@ -407,13 +407,12 @@ class PolicyClient:
         _, _, w, _ = self._infer()
         self.log(f'[policy] first inference (incl. server compile) {w:.1f} s')
 
-    def run_episode(self, duration, auto_kill, stop_check=None, trace=None):
+    def run_episode(self, duration, auto_kill):
         """Chunk step i = command for sim t_obs + i * dt_c (dataset action[t] = latest command before frame t).
         At publish_hz: position in the current chunk from the current sim time, linearly interpolated target. At step
         replan_steps the next inference starts in the background (the current chunk keeps running) and replaces it on
         arrival. At the end of the chunk the last step is held.
-        stop_check (eval): called every tick, returns a stop reason to end the episode or None.
-        trace (eval): list, gets (t, x, chunk number, q_cmd 6, gripper closed) per command."""
+"""
         cfg = self.cfg
         dt_c, dt_p, K = 1.0 / float(cfg['control_hz']), 1.0 / float(cfg['publish_hz']), int(cfg['replan_steps'])
         thr = float(cfg['gripper']['threshold'])
@@ -453,11 +452,6 @@ class PolicyClient:
             now = self.wait_sim_until(t_next)
             if now - t_start >= duration:
                 break
-            if stop_check is not None:
-                why = stop_check()
-                if why:
-                    st['stop'] = why
-                    break
             with self.lock:
                 pstop, q_meas = self.pstop, self.js[-1][1].copy()
             if pstop:
@@ -499,8 +493,6 @@ class PolicyClient:
                 t_closed = now if closed else None
                 st['gripper_events'].append((round(now - t_start, 3), 'close' if closed else 'open', round(float(act[i0, 6]), 3)))
                 self.log(f"[policy] gripper {'close' if closed else 'open'} (episode t {now - t_start:.2f} s, output {act[i0, 6]:.2f})")
-            if trace is not None:
-                trace.append((now, x, st['chunks'], *q_cmd, int(closed)))
             if auto_kill is not None and closed and not killed and t_closed is not None and now - t_closed >= auto_kill:
                 with self.lock:
                     present = self.grip[-1][1] / float(cfg['gripper']['present_scale'])

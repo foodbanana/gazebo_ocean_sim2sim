@@ -2,7 +2,7 @@
 
 작성: 2026-11-03 · `ocean_sim2sim_bringup/scripts/grasp_demo.py`, `config/grasp_demo.yaml`,
 `ocean_sim2sim_interface/grasp_judge.py`, `ocean_sim2sim_interface/kinematics.py`,
-`ocean_sim2sim_interface/observe.py` (판정 관측: 정책 평가 `ocean_sim2sim_policy` `policy_eval.py` 와 공유, `docs/policy.md`)
+`ocean_sim2sim_interface/observe.py` (판정 관측)
 
 Isaac Sim `data_collection_ur5_gripper` `isaacsim/scripts/grasp_demo.py` + `grasp_judge.py` + `config/grasp_demo.yaml`
 (2026-10-22 결과) 를 Gazebo 로 옮긴 것. 같은 순서로 드론을 아래에서 잡고, 같은 기준으로 판정한다.

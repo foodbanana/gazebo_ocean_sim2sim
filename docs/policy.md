@@ -1,7 +1,7 @@
 # 정책 추론·평가 (openpi 정책 클라이언트, Gazebo)
 
 작성: 2026-11-03 · `ocean_sim2sim_policy` (`ocean_sim2sim_policy/client.py`, `scripts/policy_client_node.py`,
-`scripts/policy_eval.py`, `scripts/fake_policy_server.py`, `config/policy_client.yaml`), `ocean_sim2sim_interface/observe.py`
+`scripts/fake_policy_server.py`, `config/policy_client.yaml`), `ocean_sim2sim_interface/observe.py`
 
 Isaac Sim 프로젝트 `data_collection_ur5_gripper` 의 정책 클라이언트 (`policy/policy_client_node.py`, `policy/policy_client.yaml`,
 문서 `docs/policy_client.md`·`docs/policy_inference_desktop.md`) 를 Gazebo 로 옮기고, 판정까지 하는 평가 실행기를 더한 것.
@@ -22,14 +22,13 @@ sim 은 텔레옵·정책 누가 명령을 보내는지 모른다 (`/joint_comma
    |                               services: /sim/reset, /sim/drone_kill <--------------------+
    v                                                                      |                    |
 +-----------------------------------------------------------------------------------------------------------+
-| [B] POLICY CLIENT  ros2 run ocean_sim2sim_policy policy_client_node.py | policy_eval.py   (venv: openpi-client)|
+| [B] POLICY CLIENT  ros2 run ocean_sim2sim_policy policy_client_node.py   (venv: openpi-client)             |
 |     1. observe: pair image(s) / joints / gripper (/ base_imu 40 ms mean) at t_obs = image stamp             |
 |        state (7) = arm 6 [rad] + present / 1150,  cameras from config (wrist only),  prompt                  |
 |     2. obs -> server -> action chunk (10, 7)   (next request in the background at chunk step 4)              |
 |     3. execute on sim time: 60 Hz, linear interpolation between steps, skip steps already passed              |
 |     4. safety (teleop values): 1.5 rad/s, lead <= 0.08 rad, URDF limits - 0.05 rad; stop on protective stop / |
 |        desync > 0.2 rad / stale observation;  gripper: output > 0.5 -> 1150                                  |
-|     policy_eval.py only: grasp judge (observe.py + grasp_judge.py) -> ~/ocean_sim2sim_reports/policy_eval_*/ |
 +-----------------------------------------------------------------------------------------------------------+
    |  websocket ws://<host>:8000 (msgpack)                                ^
    v  obs: state, image(s) HxWx3 uint8, prompt                            |  actions (10, 7)
@@ -71,10 +70,8 @@ cd ~/openpi && XLA_PYTHON_CLIENT_PREALLOCATE=false uv run scripts/serve_policy.p
   --policy.config=pi05_ur5 --policy.dir=checkpoints/pi05_ur5/full_first13_10k/9999
 #   XLA_PYTHON_CLIENT_PREALLOCATE=false 필수 (없으면 JAX 가 GPU 75 % 를 미리 잡음). 다른 PC 면 클라이언트에 --host
 
-# [B] 터미널 3: 평가 (판정·보고서) 또는 클라이언트만
-ros2 run ocean_sim2sim_policy policy_eval.py --episodes 10 --duration 30              # 사람이 모터 정지
-ros2 run ocean_sim2sim_policy policy_eval.py --episodes 10 --duration 30 --auto-kill 1.0
-ros2 run ocean_sim2sim_policy policy_client_node.py --reset --episodes 5 --duration 30  # Isaac 과 같은 클라이언트 (판정 없음)
+# [B] 터미널 3: 정책 클라이언트 (Isaac 과 같음). 성공 여부는 사람이 GUI 로 보고 판단 (2026-11-04 사용자 결정, 자동 판정 policy_eval.py 삭제)
+ros2 run ocean_sim2sim_policy policy_client_node.py --reset --episodes 5 --duration 30
 
 # [D] 터미널 4: 사람이 Gazebo 를 보고 잡혔으면 드론 모터 정지
 ros2 service call /sim/drone_kill std_srvs/srv/Trigger
@@ -98,16 +95,6 @@ ros2 run ocean_sim2sim_policy policy_client_node.py --reset --duration 10
 | `--reset` / `--episodes N` | 에피소드마다 `/sim/reset` / N 번 (2 이상이면 `--reset` 필수) |
 | `--auto-kill S` | 닫기 명령 S 초 뒤 그리퍼가 막혀 있으면 (present < 0.9) `/sim/drone_kill` 한 번 |
 | `--host`, `--port`, `--prompt`, `--config` | 설정 덮어쓰기 |
-
-| `policy_eval.py` | 뜻 |
-|---|---|
-| `--episodes N`, `--duration S` (필수), `--auto-kill S` | 위와 같음 (리셋은 항상, `--no-reset` 은 1 에피소드 디버그용) |
-| `--operator-wait S` (기본 15) | 정책이 끝났는데 잡힌 채 모터가 돌면 사람의 모터 정지를 S sim s 기다림 (팔은 마지막 목표 유지). `--auto-kill` 이면 기다리지 않고 바로 끔 |
-| `--hold-margin S` (기본 1) | 모터 정지 뒤 판정 hold_time (2.5 s) 에 더 기다리는 시간 |
-| `--stop-on-result` | 판정이 나면 (held / failed) 정책 실행을 바로 끝냄 (기본 끔 = Isaac 처럼 duration 끝까지) |
-| `--judge-config` | 판정 설정 (기본: 설치된 `ocean_sim2sim_bringup/config/grasp_demo.yaml` 의 `judge`, `control_hz`, 그리퍼 값) |
-| `--report-dir` (기본 `~/ocean_sim2sim_reports`) | 보고서 위치 (실행 때 `~` 를 풂) |
-| `--base-link`, `--tcp-link`, `--boat-link` | TCP 계산 링크 (grasp_demo.py 와 같은 기본값) |
 
 ## 4. 설정 `config/policy_client.yaml`
 
@@ -165,34 +152,10 @@ base_imu(t_obs) = header.stamp 가 (t_obs - 0.040, t_obs] 인 /base/imu 메시�
 - **멈춤**: duration, 보호 정지 (`/protective_stop` true), desync (측정 − 보낸 목표 > 0.2 rad), 관측 에러
 - **auto-kill**: 닫기 S 초 뒤 present < 0.9 → `/sim/drone_kill` 한 번
 
-## 6. 평가 실행기 `policy_eval.py`
+## 6. 평가 실행기 (삭제)
 
-에피소드마다:
-
-1. `/sim/reset` (scene 의 seed·드론 목록·offset 을 그대로 씀. 답 JSON 을 기록. 첫 드론이 뜨기 전 "not ready" 면 기다렸다 다시)
-2. 드론 준비 (PX4 armed / 고정 드론 attached) → sim 0.2 s
-3. 정책 클라이언트 실행 (`client.py`, `policy_client_node.py` 와 같은 코드) + 동시에 판정 스레드:
-   `GraspJudge` (`ocean_sim2sim_interface/grasp_judge.py`, `grasp_demo.yaml` 의 `judge` 값) 를 `control_hz` (50 Hz, sim) 마다 갱신.
-   관측은 `grasp_demo.py` 와 같은 출처 (`ocean_sim2sim_interface/observe.py` 로 공유): `/drone/odometry`, `/drone/contacts`
-   (같은 sim 스텝 메시지 합침), TCP = `/robot_description` 체인 + `/sim/boat_odometry`, `/drone/px4/state` armed,
-   `/gripper/joint_states`. 닫기 명령 여부는 `/gripper/command`
-4. 모터 정지: `--auto-kill` (클라이언트 규칙) 또는 사람. 정책이 끝났는데 잡힌 채 모터가 돌면 `--auto-kill` 이면 바로 끄고,
-   아니면 `--operator-wait` 동안 사람을 기다림
-5. 모터 정지 뒤 hold_time 2.5 s 동안 판정 (held = 성공) → `finish`
-
-판정 규칙은 `docs/grasp_demo.md` (grasped: 닫는 중 그리퍼가 멈춤 + 두 손가락 접촉 / held: 모터 정지 뒤 2.5 s 버팀 /
-실패 이유 no_grasp_empty, no_grasp_contact, slip, dropped, opened_early, timeout:<상태>). 정책이 한 번도 잡지 못하면 `timeout:approach`.
-
-**보고서** `~/ocean_sim2sim_reports/policy_eval_<시각>/`:
-
-| 파일 | 내용 |
-|---|---|
-| `report.txt` | 로그 전체 + 요약 표 (에피소드, 드론 목록 점, 결과, 이유, 멈춤 이유, 잡은 시각, 모터 정지 시각, 추론 시간, held·limited, 그리퍼 바뀐 수, 보호 정지 수) + 성공률 |
-| `summary.json`, `summary.csv` | 같은 표 (성공률, 결과별 개수) |
-| `config.json` | 인자, 클라이언트 설정, 판정 설정, 서버 metadata |
-| `ep<NN>_result.json` | 리셋 답, 클라이언트 결과 (+ chunk 마다 추론 wall 시간, 서버 `infer_ms`, 도착 칸, 그리퍼 바뀐 시각), 판정 결과·이벤트, 보호 정지 이벤트 (sim 시각, 켜짐/꺼짐), 링크별 최대 접촉력 |
-| `ep<NN>_timeline.csv` | 판정 틱마다 TCP·드론 위치, 그리퍼 각, 손가락 힘, armed, 그리퍼 명령, 보호 정지, TCP 좌표계 드론 위치 |
-| `ep<NN>_commands.csv` | 보낸 팔 명령 (sim 시각, chunk 위치 x, chunk 번호, 6 관절, 그리퍼 닫힘) |
+자동 판정·보고서를 하던 `policy_eval.py` 는 2026-11-04 삭제 (사용자 결정: Isaac Sim 처럼 사람이 GUI 로 보고 판단).
+판정기 (`ocean_sim2sim_interface/grasp_judge.py`, `observe.py`) 는 스크립트 데모 `grasp_demo.py` 가 계속 씀.
 
 ## 7. Isaac Sim 과 다른 점
 
@@ -204,9 +167,7 @@ base_imu(t_obs) = header.stamp 가 (t_obs - 0.040, t_obs] 인 /base/imu 메시�
 | `/sim/reset` | 실패면 에러 | "not ready" (첫 드론 이륙 전) 면 기다렸다 다시 (`grasp_demo.py` 와 같음) | Gazebo scene 은 첫 드론이 뜬 뒤에만 리셋 받음 |
 | 리셋 답 | `drone_goal_base`, `drone_target.name` | `drone_pos_base`, `drone_target` (이름), `seed` | scene_node JSON |
 | 결과 | 출력만 | 출력 + 결과 dict 에 `detail` (chunk 마다 추론 시간, 서버 `infer_ms`, 그리퍼 바뀐 시각) | 평가 보고서 |
-| 평가용 고리 | 없음 | `run_episode(stop_check, trace)` (기본 None = Isaac 과 같은 동작) | `policy_eval.py` |
 | 로그 | 한국어 | 영어 | 레포 코드 언어 |
-| 판정 | 사람이 GUI 로 봄 | `policy_eval.py` 가 `GraspJudge` 로 (grasp_demo 와 같은 기준) | 자동 평가 |
 
 그 외 (스레드, 짝짓기, 0.066 s, 25 Hz chunk, 60 Hz 보간, replan_steps, 그리퍼 0.5, 안전 한계, desync·보호 정지, auto-kill 규칙, 결과 키) 는 같다.
 
@@ -222,7 +183,7 @@ python3 -m pytest src/gazebo_ocean_sim2sim/ocean_sim2sim_policy/test      # 24 p
   (칸 사이 직선, 0 이전·9 이후 유지, 그리퍼는 ⌊x⌋), Isaac 문서 5.3 칸 위치 예, 안전 한계, URDF 한계
 - 가짜 sim (Python 으로 토픽·서비스 흉내, 레포 밖) + `fake_policy_server.py` 로 Gazebo 없이 (격리 ROS_DOMAIN_ID):
   `policy_client_node.py` 2 에피소드 (약 58 Hz 명령, 지연 0.15 s 에서 도착 약 5.5 칸), base_imu key (`float32[6]`)·state (`float32[13]`),
-  `blank_images` (`observation/base_image uint8[480, 640, 3]`), 없는 카메라 에러, `policy_eval.py` 3 에피소드
+  `blank_images` (`observation/base_image uint8[480, 640, 3]`), 없는 카메라 에러 (당시 평가 실행기 3 에피소드, 지금은 삭제)
   (닫기 → auto-kill → held 3/3), 사람 모터 정지 기다림 (held), 보호 정지 (stop protective_stop, 이벤트 기록)
 - `grasp_demo.py` 를 `observe.py` 로 바꾼 뒤 옛 코드와 같은 가짜 입력에서 관측 dict·힘·TCP/드론 자세·armed 가 같음
 - **Gazebo + 실제 정책 서버 통합 시험은 아직** (사용자가 함)

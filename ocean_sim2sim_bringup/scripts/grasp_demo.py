@@ -55,7 +55,7 @@ class Demo(Node, GraspObservation):
     def __init__(self, args, dc):
         super().__init__('grasp_demo', parameter_overrides=[Parameter('use_sim_time', value=True)])
         self.args, self.dc = args, dc
-        # judge observation sources (ocean_sim2sim_interface/observe.py, shared with ocean_sim2sim_policy policy_eval.py)
+        # judge observation sources (ocean_sim2sim_interface/observe.py)
         self.init_grasp_observation(dc['gripper_upper'], dc['gripper_raw_max'])
         self.arm_pub = self.create_publisher(JointState, '/joint_command', 10)
         self.grip_pub = self.create_publisher(Float64, '/gripper/command', 10)
@@ -149,7 +149,7 @@ class Episode:
     # ---- one control tick
     def tick(self, control=None):
         n = self.n
-        # poll every 2 ms (was 0.5 ms: a busy wait that took CPU and the GIL from the spin thread; same as policy_eval).
+        # poll every 2 ms (was 0.5 ms: a busy wait that took CPU and the GIL from the spin thread).
         # A tick starts at most 2 ms (wall) late in a 20 ms (50 Hz) period; commands carry the sim time of the tick.
         while rclpy.ok() and n.now() < self.next_tick:
             time.sleep(0.002)

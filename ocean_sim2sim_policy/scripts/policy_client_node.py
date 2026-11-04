@@ -14,7 +14,7 @@
 #   source /opt/ros/jazzy/setup.bash && source ~/vrx_ws/.venv/bin/activate && source ~/vrx_ws/install/setup.bash
 #   ros2 run ocean_sim2sim_policy policy_client_node.py --reset --duration 30
 #   --episodes N : reset -> run, N times.  --auto-kill S : S s after the close command, if the gripper is blocked by the
-#   object (present < 0.9), drone motors off. Judged evaluation with reports: policy_eval.py
+#   object (present < 0.9), drone motors off.
 # =============================================================
 import argparse
 import os

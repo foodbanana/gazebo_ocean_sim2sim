@@ -1,5 +1,5 @@
 # =============================================================
-# policy_client.yaml - openpi policy client for the Gazebo ocean sim (scripts/policy_client_node.py, policy_eval.py,
+# policy_client.yaml - openpi policy client for the Gazebo ocean sim (scripts/policy_client_node.py,
 # docs/policy.md). Values = Isaac Sim data_collection_ur5_gripper policy/policy_client.yaml (2026-10-27) unless marked NEW.
 #
 # Every key is required: the client stops with an error when one is missing (no defaults in code, as Isaac).

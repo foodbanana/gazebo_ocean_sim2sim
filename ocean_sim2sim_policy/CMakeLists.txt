@@ -8,7 +8,6 @@ find_package(ament_cmake_python REQUIRED)
 ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/policy_client_node.py
-  scripts/policy_eval.py
   scripts/fake_policy_server.py
   DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})

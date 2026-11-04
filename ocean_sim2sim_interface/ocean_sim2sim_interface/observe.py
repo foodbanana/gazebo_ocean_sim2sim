@@ -1,6 +1,6 @@
 """Grasp judge observations from Gazebo: what the judge sees, not what a policy gets. docs/grasp_demo.md, docs/policy.md
 
-Shared by ocean_sim2sim_bringup grasp_demo.py (scripted demo) and ocean_sim2sim_policy policy_eval.py (policy evaluation),
+Used by ocean_sim2sim_bringup grasp_demo.py (scripted demo); was shared with a policy evaluation),
 so both judge from the same sources in the same way (factored out of grasp_demo.py, behaviour unchanged):
   /robot_description (latched)  TCP chain base_link -> tcp_link and boat_link -> base_link (any arm, read from the URDF)
   /joint_states (arm, 120 Hz)    arm joints for the TCP forward kinematics

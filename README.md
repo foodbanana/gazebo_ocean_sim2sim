@@ -219,7 +219,6 @@ Run with the main launch up (except `regression.py`, which starts its own). Repo
 | `ros2 run ocean_sim2sim_bringup grasp_test.py --tests E G3 G1 G4 H` | gripper force / friction tests (calm world): empty close, pull-out force, hold | [`docs/grasp.md`](docs/grasp.md) |
 | `ros2 run ocean_sim2sim_bringup grasp_demo.py --case all` | scripted drone grasp (success, offset_y, offset_x, empty, miss) + judge, calm world | [`docs/grasp_demo.md`](docs/grasp_demo.md) |
 | `ros2 run ocean_sim2sim_bringup regression.py [--quick] [--only grip,pstop,demo,waves]` | one-command regression suite (own headless bringups, ~10 min, `--quick` ~5 min); exit code 0 = all PASS | [`docs/regression.md`](docs/regression.md) |
-| `ros2 run ocean_sim2sim_policy policy_eval.py --episodes 10 --duration 30 [--auto-kill 1.0]` | judged policy evaluation: reset -> policy -> motors off -> grasp judge, per-episode report | [`docs/policy.md`](docs/policy.md) |
 | `ros2 run ocean_sim2sim_policy policy_client_node.py --reset --episodes 5 --duration 30` | policy client only (same CLI as the Isaac Sim client, no judge) | [`docs/policy.md`](docs/policy.md) |
 | `ros2 run ocean_sim2sim_policy fake_policy_server.py [--delay 0.18]` | fake openpi server (constant action chunks) to test the plumbing without a model | [`docs/policy.md`](docs/policy.md) |
 | `ros2 run ocean_sim2sim_drone drone_link_test.py --test hover` | drone plugin check without PX4 (`drone_mode:=fixed`) | [`docs/drone_px4.md`](docs/drone_px4.md) |
@@ -235,8 +234,8 @@ ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py
 # terminal 2: policy server (in the openpi checkout), wait for "server listening on 0.0.0.0:8000"
 XLA_PYTHON_CLIENT_PREALLOCATE=false uv run scripts/serve_policy.py policy:checkpoint \
   --policy.config=<train config> --policy.dir=<checkpoint dir>
-# terminal 3 (venv active): evaluation, or policy_client_node.py; --host <ip> if the server is on another PC
-ros2 run ocean_sim2sim_policy policy_eval.py --episodes 10 --duration 30
+# terminal 3 (venv active): policy client; --host <ip> if the server is on another PC. Success is judged by eye in the GUI
+ros2 run ocean_sim2sim_policy policy_client_node.py --reset --episodes 5 --duration 30
 # terminal 4: operator stops the drone motors once it is grasped (or use --auto-kill)
 ros2 service call /sim/drone_kill std_srvs/srv/Trigger
 ```
@@ -286,7 +285,7 @@ Arm control: `gz_ros2_control` with `joint_trajectory_controller` (position) for
 | [`docs/drone_px4.md`](docs/drone_px4.md) | PX4 SITL drone: structure, air start, grasp demo with PX4, boat IMU, collision detector comparison |
 | [`docs/grasp_demo.md`](docs/grasp_demo.md) | scripted drone grasp demo and judge (`grasp_demo.py`), results |
 | [`docs/waves.md`](docs/waves.md) | wave settings and measured base motion per wave gain, comparison with the Isaac Sim moving base |
-| [`docs/policy.md`](docs/policy.md) | openpi policy client and evaluation (`policy_client_node.py`, `policy_eval.py`) |
+| [`docs/policy.md`](docs/policy.md) | openpi policy client (`policy_client_node.py`) |
 | [`docs/regression.md`](docs/regression.md) | one-command regression suite (`regression.py`), checks and expected values |
 
 ## Known sim2sim gaps
