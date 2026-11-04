@@ -56,8 +56,8 @@ checks:
   # G3 slip force: the documented 9.3~9.5 N is suspect. 2026-11-04 regression: 27~32 N with a single helper bridge;
   # with one extra wrench bridge the reported pull halves (ApplyLinkWrench adds every forwarded increment), and stale
   # grasp_test bridges were left running before commit 809056e -> the old runs likely applied ~12x the reported pull.
-  # Range kept at the documented value until docs/grasp.md is re-measured (decision pending).
-  grip.G3_slip_force_N: {min: 8.5, max: 10.5, expected: '9.3~9.5 N', source: 'docs/grasp.md 3 (G3 미끄럼 힘), docs/drone_px4.md 8'}
+  # Re-measured 2026-11-04 with no stale bridges: 27.3, 30.4, 32.3, 32.3 N (docs/grasp.md 3 corrected).
+  grip.G3_slip_force_N: {min: 25.0, max: 35.0, expected: '27~32 N', source: 'docs/grasp.md 3 (G3 미끄럼 힘, 2026-11-04 정정)'}
   grip.G3_normal_force_N: {min: 23.0, max: 30.0, expected: '26.6 N per finger (r2 / l2)', source: 'docs/grasp.md 3 (손가락당 수직력)'}
   grip.G1_slip_mm: {max: 0.5, expected: '0.07 mm (Isaac < 1 mm)', source: 'docs/grasp.md 3 (G1)'}
   grip.G1_box_jitter_mm: {max: 0.3, expected: '0.10 mm', source: 'docs/grasp.md 3 (G1)'}

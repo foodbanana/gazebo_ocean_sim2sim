@@ -29,7 +29,7 @@ ros2 run ocean_sim2sim_bringup regression.py --only grip,pstop   # 고른 단계
 
 판정 (기댓값·허용 범위와 그 출처는 `regression.yaml` `checks`):
 
-- **PASS/FAIL**: E 1.134 rad (±0.01), G3 미끄럼 힘 8.5~10.5 N (기록 9.3~9.5), 손가락당 수직력 23~30 N (26.6), G1·G4·H 미끄러짐
+- **PASS/FAIL**: E 1.134 rad (±0.01), G3 미끄럼 힘 25~35 N (2026-11-04 다시 잰 27~32 N), 손가락당 수직력 23~30 N (26.6), G1·G4·H 미끄러짐
   0.5~0.6 mm 이하 (0.07·0.14·0.19), G4 관절 떨림 0.01° 이하, RTF 0.9 이상 (가만히·호버), 보호 정지 시나리오, 데모 success·offset_y (held)·empty (no_grasp_empty)
 - **INFO** (실행마다 달라지는 것으로 알려진 값, 실패로 치지 않음): 데모 offset_x (모터 정지 뒤 회전 10° 경계에서 가끔 slip), miss
   (Isaac 과 다른 gap), success 회전, 잡고 있는 동안 RTF (0.25~0.5), G4·H 박스 떨림, 접촉 정지 때의 힘
@@ -58,7 +58,7 @@ ros2 run ocean_sim2sim_bringup regression.py --only grip,pstop   # 고른 단계
   원인 (확인): `ApplyLinkWrench` persistent 힘은 메시지마다 **더해지고**, grasp_test 는 증가분만 보낸다. 브리지가 둘이면 같은 증가분이
   두 번 들어가 실제 힘이 두 배가 된다 — 같은 토픽 브리지를 하나 더 띄우면 보고된 당김이 19.4~22.6 → 11.5~11.9 N 으로 반이 됨.
   커밋 809056e 전에는 중단된 grasp_test 의 브리지가 남았으므로, 기록된 9.4 N (보고된 당김 1.6 N) 은 남은 브리지 약 12 개로 실제
-  당김이 부풀려진 값으로 보인다 → **grasp.md 3 장의 G3 값 (−51 % gap, 마찰계수 표, 충돌 검출기 비교의 G3 행) 은 다시 재야 한다**.
+  당김이 부풀려진 값으로 보인다 → → 2026-11-04 다시 재서 (27.3~32.3 N) grasp.md 3 장·drone_px4.md 8 장과 regression.yaml 범위 (25~35 N) 를 고침. 마찰계수 표는 무효로 표시 (다시 재지 않음).
   `regression.yaml` 의 범위는 다시 잴 때까지 기록값 그대로 둠 (다시 잴지 결정 필요)
 - 보호 정지: 충돌 정지는 접촉력 (wrist_2_link 620~836 N, 기록 491~590 N), 점프 정지는 오차 6.4°, 리셋 모두 성공
 - 데모: success·offset_y·offset_x held, empty no_grasp_empty, miss 는 이번에 **no_grasp_empty** (Isaac Sim 과 같음, 드론이 43 mm 밀림).
