@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>ocean_sim2sim_teleop</name>
+  <version>0.1.0</version>
+  <description>PICO 4 Ultra arm teleoperation (port of the Isaac Sim xr_teleop_node: controller pose -> differential IK
+    -> /joint_command, /gripper/command, buttons -> recorder requests) and the episode recorder (rosbag2 toggle).</description>
+  <maintainer email="taeung1203ai@gmail.com">taeung</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>rosgraph_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>python3-matplotlib</exec_depend>
+  <exec_depend>ros2bag</exec_depend>
+  <exec_depend>rosbag2_py</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <!-- xrobotoolkit_sdk: XRoboToolkit PC service + Python binding in its own venv (docs/teleop.md), not a rosdep key -->
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

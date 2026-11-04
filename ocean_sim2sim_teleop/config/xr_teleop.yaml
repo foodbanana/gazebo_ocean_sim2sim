@@ -1,0 +1,81 @@
+# =============================================================
+# xr_teleop.yaml - PICO 4 Ultra arm teleoperation (ocean_sim2sim_teleop xr_teleop_node.py, docs/teleop.md)
+#
+#   Copied from data_collection_ur5_gripper teleop/xr_teleop.yaml (values decided there 2026-10-12 ~ 10-15).
+#   Every key is required (the node stops with an error if one is missing; no defaults in the code).
+#   Operating feel values (scale, rotation, max_joint_speed, filter): do not change them in the middle of a data set
+#   (new task name for the recorder if you do).
+# =============================================================
+
+rate_hz: 60.0                 # /joint_command rate (own timer, wall). >= 50 Hz. The controller data comes at 90 Hz
+
+# header.stamp of /joint_command: sim = latest /clock (sim time), wall = PC time (real robot)
+stamp: sim
+
+topics:
+  joint_states: /joint_states
+  joint_command: /joint_command
+  gripper_command: /gripper/command
+  clock: /clock
+  protective_stop: /protective_stop     # std_msgs/Bool (interface node)
+  reset_hold: /ocean_sim2sim/hold_state # std_msgs/Bool latched (interface): true during /sim/reset -> teleop stops
+  request: /teleop/request              # recorder requests (std_msgs/String, buttons below), not recorded
+  robot_description: /robot_description # URDF of the boat + arm (chain robot_mount -> rh_p12_rn_tcp)
+
+# controller -> TCP
+hand: right                   # pose and trigger of the right controller
+scale: 0.9                    # hand motion : TCP motion (position only; rotation 1 : 1)
+rotation: true                # TCP follows the wrist rotation too (false = position only, orientation of the start)
+# At the teleop button press: controller forward (own -z) projected on the horizontal plane = robot base +x, up = base +z.
+# Tip raised or lowered more than this from horizontal -> "forward" undefined, start refused
+max_start_elevation_deg: 60.0
+
+# IK (ik_model.ik_step)
+max_joint_speed: 1.5          # [rad/s] max speed of the joint target (below the sim joint max pi rad/s)
+max_lead: 0.08                # [rad] max lead of the joint target over the measurement (4.6 deg; protective stop at 5 deg)
+damping: 0.02                 # damped least squares lambda
+limit_margin: 0.05            # [rad] margin inside the joint limits (the interface rejects commands outside the limits)
+warn_pos_err: 0.05            # [m] notice when the TCP target is this far ahead of the commanded pose
+warn_manip: 0.01              # notice when sqrt(det(J J^T)) is below this (under_drone pose about 0.087)
+
+# Controller pose filter: One Euro (Casiez et al. 2012). cutoff = min_cutoff + beta x (filtered) speed
+#   Isaac Sim measurement (2026-10-14): still-hand tremor 1 mm -> 0.43 mm, extra lag 3 cm/s 32 ms, 15 cm/s 13 ms, 50 cm/s 6 ms
+filter:
+  enabled: true
+  pos_min_cutoff_hz: 1.5       # [Hz]
+  pos_beta: 40.0               # [Hz/(m/s)]
+  rot_min_cutoff_hz: 1.5       # [Hz]
+  rot_beta: 10.0               # [Hz/(rad/s)]
+  d_cutoff_hz: 1.0             # [Hz] low pass of the speed estimate
+
+# Mount protection: targets that bring a wrist joint origin (wrist_1 / 2 / 3) further below this height [m, robot base
+#   frame z] are not sent (going up is never blocked). Isaac Sim (table top = base z 0): wrist_2 touched the table at
+#   0.058 m -> 0.09. Same robot base geometry in Gazebo (robot_mount on the boat deck mount)
+min_wrist_height: 0.09
+
+# Gripper: trigger (0 ~ 1) as a switch. Above close_above -> closed, below open_below -> open (hysteresis in between)
+gripper:
+  close_above: 0.6
+  open_below: 0.4
+  raw_open: 0.0
+  raw_close: 1150.0
+
+# Controller buttons (A / B right, X / Y left: select the left controller too in the headset app). Once per press.
+# Order: B reset -> Y teleop on -> hold -> A record -> grasp -> X motors off -> A stop -> B next episode
+teleop_button: Y             # teleop start / stop (the right controller pose at the press is the reference)
+# Recorder (record_toggle.py) requests on /teleop/request, also when not teleoperating. {} = none
+#   record     : record start / stop (no reset; start only after a reset and before recording)
+#   reset      : episode reset (/sim/reset). While recording: failed, moved to bags/_discarded/, then reset
+#   drone_kill : drone motors off (= recorder key k)
+buttons:
+  record: A
+  reset: B
+  drone_kill: X
+
+# input / state checks (wall time)
+xr_connect_timeout: 5.0       # [s] headset data (increasing stamp, unit quaternion) must arrive within this at start
+xr_stale_warn: 0.5            # [s] headset stamp frozen this long -> notice only (the arm stays at the last target)
+state_stale: 0.5              # [s] /joint_states (and /clock with stamp sim) missing this long -> start refused / stop
+# measured joints this far from the joint target -> stop (reset moved the arm, or protective stop)
+desync: 0.2                   # [rad]
+status_sec: 5.0               # [s] status line while teleoperating

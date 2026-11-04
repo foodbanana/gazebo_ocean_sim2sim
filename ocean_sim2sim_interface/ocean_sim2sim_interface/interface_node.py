@@ -36,6 +36,9 @@ Loop ticks:
 Hold (/ocean_sim2sim/hold, std_srvs/SetBool, used by scene_node during /sim/reset = Isaac Sim bridge.hold):
   true  -> commands are still checked but not applied (kept commands are dropped)
   false -> commands are applied again; the gripper goal is open (0), as the reset left the gripper open.
+  /ocean_sim2sim/hold_state std_msgs/Bool (latched, on every change): the hold, so that command sources (teleop node)
+  can stop during a reset. Isaac Sim needs no topic: its reset teleports the arm and the teleop node sees the jump;
+  here the reset moves the arm smoothly and a lead-limited joint target follows it without any jump.
 
 Protective stop (UR protective stop = Isaac Sim protective_stop.py, docs/interface.md, rules in protective_stop.py):
   checked on every physics step from
@@ -162,6 +165,8 @@ class InterfaceNode(Node):
         self.create_subscription(JointState, topic('arm.joint_command_topic', '/joint_command'), self._guard(self._on_arm_command), 10)
         self.create_subscription(Float64, topic('gripper.command_topic', '/gripper/command'), self._guard(self._on_gripper_command), 10)
         self.create_service(SetBool, '/ocean_sim2sim/hold', self._on_hold)
+        self.pub_hold = self.create_publisher(Bool, '/ocean_sim2sim/hold_state', latched)
+        self.pub_hold.publish(Bool(data=False))
         if self.ps is not None:
             self.create_subscription(String, topic('protective_stop.contacts_topic', '/sim/robot_contacts'),
                                      self._guard(self._on_contacts), 100)
@@ -317,6 +322,7 @@ class InterfaceNode(Node):
     def _on_hold(self, req, res):
         self.hold = bool(req.data)
         self.pending_arm = self.pending_grip = None
+        self.pub_hold.publish(Bool(data=self.hold))
         ps = ''
         if self.ps is not None:
             if self.hold:
