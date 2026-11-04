@@ -19,7 +19,10 @@ Isaac Sim virtual work: sum of finger normal forces x 50.8 mm/rad = transmitted 
 """
 import argparse
 import math
+import os
+import signal
 import subprocess
+import sys
 import threading
 import time
 
@@ -385,7 +388,11 @@ def main():
     BOX_MESH = args.box_mesh
     ex = MultiThreadedExecutor()
     ex.add_node(n)
-    threading.Thread(target=ex.spin, daemon=True).start()
+    spin_thread = threading.Thread(target=ex.spin, daemon=True)
+    spin_thread.start()
+    # SIGTERM (e.g. `timeout`) -> normal exit through `finally`, so the helper bridge below is stopped too
+    # (killed tests left their parameter_bridge running before)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))
     w = args.world
     bridge = subprocess.Popen(
         ['ros2', 'run', 'ros_gz_bridge', 'parameter_bridge',
@@ -396,7 +403,8 @@ def main():
          f'/world/{w}/wrench/persistent@ros_gz_interfaces/msg/EntityWrench]gz.msgs.EntityWrench',
          f'/world/{w}/wrench/clear@ros_gz_interfaces/msg/Entity]gz.msgs.Entity',
          '--ros-args', '-p', 'use_sim_time:=true'],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True)       # own process group: `ros2 run` starts parameter_bridge as a child, stop both
     try:
         while rclpy.ok() and (not n.q or n.boat is None or n.arm_pub.get_subscription_count() == 0
                               or not n.spawn_cli.service_is_ready() or n.wrench_pub.get_subscription_count() == 0):
@@ -413,8 +421,17 @@ def main():
             elif t == 'H':                 # hold a G3-size box of --mass without pulling
                 test_hold(n, 'H', (0.16, 0.06, 0.10), args.mass, args.mu, 3.0, top=args.top)
     finally:
-        bridge.terminate()
-        rclpy.shutdown()
+        try:
+            os.killpg(bridge.pid, signal.SIGINT)
+            bridge.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            os.killpg(bridge.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        ex.shutdown()
+        spin_thread.join(timeout=2.0)
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

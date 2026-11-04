@@ -418,7 +418,8 @@ def main():
         except Exception:  # noqa: BLE001  shutdown at the end
             pass
 
-    threading.Thread(target=spin, daemon=True).start()
+    spin_thread = threading.Thread(target=spin, daemon=True)
+    spin_thread.start()
     out_dir = os.path.join(args.report_dir, 'grasp_demo_' + datetime.datetime.now().strftime('%Y%m%d_%H%M%S'))
     os.makedirs(out_dir, exist_ok=True)
     report = open(os.path.join(out_dir, 'report.txt'), 'w', encoding='utf-8')
@@ -448,7 +449,13 @@ def main():
             except Exception:  # noqa: BLE001
                 pass
         report.close()
-        rclpy.shutdown()
+        # stop the executor thread before rclpy.shutdown (a daemon thread still inside the executor when the context
+        # goes away ended the process with "terminate called without an active exception" / core dump)
+        ex.shutdown()
+        spin_thread.join(timeout=2.0)
+        n.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
