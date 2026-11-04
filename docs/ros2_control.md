@@ -55,7 +55,7 @@ ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py
  │    ├─ VRX: URDF → SDF → 원점에 스폰, /wamv/* · /clock 브리지
  │    └─ (모델 안) gz_ros2_control 플러그인 → controller_manager (240 Hz)
  ├─ robot_state_publisher  (robot_description, gz_ros2_control 이 여기서 URDF 를 읽음)
- ├─ spawner: joint_state_broadcaster, arm_state_broadcaster, arm_controller, gripper_controller
+ ├─ spawn_controllers.py (own spawner, docs/teleop.md): joint_state_broadcaster, arm_state_broadcaster, arm_controller, gripper_controller
  └─ ocean_sim2sim_interface  (interface.md)
 ```
 
