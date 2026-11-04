@@ -86,6 +86,21 @@ ros2 run ocean_sim2sim_teleop plot_bag_imu.py ~/vrx_ws/src/gazebo_ocean_sim2sim/
 신호가 끊기거나 (조종기 끔) 줄이 0.2 s 안 오면 그 자리 Offboard 호버로 되돌리고, 돌아오고 가운데면 다시 넘긴다.
 조종기에는 모터 정지 스위치가 없다 → X 또는 `k`. 직렬 장치가 뽑히면 그 실행 동안 조종기를 끄고 드론은 호버 (Isaac 은 에러로 멈춤).
 
+### 보조 화면 (Side view · Top view)
+
+손목 영상만으로는 그리퍼와 드론의 앞뒤·좌우·높이를 맞추기 어렵다 (Isaac 2026-10-23 과 같은 이유) → Gazebo GUI 오른쪽에 두 화면.
+Isaac `drone_scene.py` `GUI_AUX_VIEWS` 와 같은 위치·화각 (`ocean_sim2sim_description/urdf/aux_views.xacro`):
+
+| 화면 | 카메라 (로봇 base 기준) | 보이는 것 |
+|---|---|---|
+| Side view | (0.40, −1.60, 0.64) m, 로봇 오른쪽에서 +y 쪽, 3.6° 아래 | 화면 오른쪽 = 로봇 앞. 그리퍼와 드론의 앞뒤 거리·높이 차 |
+| Top view | (0.30, 0, 2.44) m, 82.8° 아래 | 화면 위 = 로봇 앞, 오른쪽 = 로봇 오른쪽. 드론이 그리퍼 바로 위인지 |
+
+- 가로 화각 47.2°, 512 x 288, 15 Hz (`aux_views_rate`). 카메라는 로봇 base 에 붙어 보트와 같이 움직인다 (파도에도 그리퍼·드론 상대 위치가 그대로 보임)
+- **조작자용**: 녹화하지 않고 정책 입력도 아니다 (gz 토픽 `/aux_view/side`, `/aux_view/top`, ROS 로 bridge 하지 않음)
+- 켜기·끄기: `aux_views:=` 비움 (기본) = GUI 면 켬, headless 면 끔. `aux_views:=false` 로 끈다 (Isaac `--aux-views`)
+- RTF (headless 로 카메라만 켜서 잼, 잔잔한 물, 드론 호버): 끔 1.00, 켬 1.00 (Isaac 은 0.98 → 0.82)
+
 ## 4. 녹화하는 것
 
 `config/recorder.yaml` (Isaac `--sim --base moving` 과 같은 토픽, 손목 카메라만):

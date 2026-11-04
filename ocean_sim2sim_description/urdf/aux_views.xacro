@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<!--
+  Operator views (GUI only): two cameras fixed to the robot base, shown in the Gazebo GUI (ImageDisplay panels added
+  by empty_ocean.launch.py aux_views:=true). Same as the Isaac Sim "Side view" / "Top view" aux viewports
+  (data_collection_ur5_gripper isaacsim/scripts/drone_scene.py GUI_AUX_VIEWS, 2026-10-23): not recorded, not a policy
+  input, only to judge forward / back, left / right and height of the gripper vs the drone. docs/teleop.md
+
+  Isaac values (world, robot base at the table top z 0.762) -> robot base frame:
+    Side view: eye (0.40, -1.60, 1.40) -> target (0.40, 0, 1.30)   => base eye (0.40, -1.60, 0.638), looking +y, 3.6 deg down
+               image right = robot forward
+    Top view : eye (0.30, 0, 3.20) -> target (0.52, 0, 1.45)        => base eye (0.30, 0, 2.438), 82.8 deg down
+               image up = robot forward, image right = robot right
+    focal 24 mm, aperture 20.955 mm -> horizontal FOV 47.2 deg (0.824 rad); render 512 x 288 (1280 x 720 x 0.4)
+  Fixed to the robot base, so the views move with the boat (the arm and the drone offset stay readable in waves).
+  A Gazebo camera looks along its link +x with +z up.
+
+  Args: parent (link the cameras are fixed to), rate [Hz] (Isaac renders every app frame; 15 Hz keeps the cost down)
+-->
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:macro name="aux_view_camera" params="name parent xyz rpy rate">
+    <link name="aux_view_${name}">
+      <inertial>
+        <mass value="1e-5"/>
+        <inertia ixx="1e-9" ixy="0" ixz="0" iyy="1e-9" iyz="0" izz="1e-9"/>
+      </inertial>
+    </link>
+    <joint name="aux_view_${name}_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="aux_view_${name}"/>
+      <origin xyz="${xyz}" rpy="${rpy}"/>
+    </joint>
+    <gazebo reference="aux_view_${name}">
+      <sensor name="aux_view_${name}" type="camera">
+        <always_on>true</always_on>
+        <update_rate>${rate}</update_rate>
+        <visualize>false</visualize>
+        <topic>/aux_view/${name}</topic>
+        <camera name="aux_view_${name}">
+          <horizontal_fov>0.824</horizontal_fov>
+          <image>
+            <width>512</width>
+            <height>288</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>20.0</far>
+          </clip>
+        </camera>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:macro name="aux_views" params="parent rate:=15">
+    <xacro:aux_view_camera name="side" parent="${parent}" xyz="0.40 -1.60 0.638" rpy="0 0.0624 1.5708" rate="${rate}"/>
+    <xacro:aux_view_camera name="top" parent="${parent}" xyz="0.30 0 2.438" rpy="0 1.4457 0" rate="${rate}"/>
+  </xacro:macro>
+</robot>

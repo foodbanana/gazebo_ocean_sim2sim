@@ -39,8 +39,9 @@ def launch(context, *args, **kwargs):
 
     world_name = os.path.splitext(arg('world'))[0]
     tmp_dirs = []
-    if arg('wave_gain') or arg('wave_period'):
-        world_name = _world_with_waves(world_name, arg('wave_gain'), arg('wave_period'), tmp_dirs)
+    aux = flag('aux_views')
+    if arg('wave_gain') or arg('wave_period') or aux:
+        world_name = _world_copy(world_name, arg('wave_gain'), arg('wave_period'), aux, tmp_dirs)
     sim_mode = arg('sim_mode')
     robot_urdf = arg('urdf')
     # The boat is always spawned at the world origin.
@@ -70,10 +71,23 @@ def launch(context, *args, **kwargs):
     return launch_processes
 
 
-def _world_with_waves(world_name, gain, period, tmp_dirs):
+AUX_VIEW_PANELS = ''.join(f'''
+      <plugin filename="ImageDisplay" name="{title}">
+        <gz-gui>
+          <title>{title}</title>
+          <property type="string" key="state">docked</property>
+        </gz-gui>
+        <topic>/aux_view/{name}</topic>
+        <topic_picker>false</topic_picker>
+      </plugin>''' for title, name in (('Side view', 'side'), ('Top view', 'top')))
+
+
+def _world_copy(world_name, gain, period, aux_views, tmp_dirs):
     """Copy of the world with other VRX wavefield gain / period (the vrx::PublisherPlugin message on
-    /vrx/wavefield/parameters; the boat buoyancy and the wave visual both read it). Same file name (= world name, used
-    in the topic names) in a temporary folder, removed on shutdown. docs/waves.md"""
+    /vrx/wavefield/parameters; the boat buoyancy and the wave visual both read it, docs/waves.md) and / or the GUI
+    panels of the operator views (aux_views: ImageDisplay of /aux_view/side and /aux_view/top, cameras from
+    aux_views.xacro, docs/teleop.md). Same file name (= world name, used in the topic names) in a temporary folder,
+    removed on shutdown."""
     src = world_name + '.sdf'
     if not os.path.isabs(src):
         src = os.path.join(get_package_share_directory('ocean_sim2sim_gazebo'), 'worlds', src)
@@ -87,6 +101,10 @@ def _world_with_waves(world_name, gain, period, tmp_dirs):
         sdf, n = pat.subn(r'\g<1>' + val, sdf)
         if n != 1:
             raise RuntimeError(f'{src}: wavefield parameter "{key}" found {n} times (expected 1)')
+    if aux_views:
+        if sdf.count('</gui>') != 1:
+            raise RuntimeError(f'{src}: no single <gui> block for the aux view panels')
+        sdf = sdf.replace('</gui>', AUX_VIEW_PANELS + '\n    </gui>')
     d = tempfile.mkdtemp(prefix='ocean_sim2sim_world_')
     tmp_dirs.append(d)
     with open(os.path.join(d, os.path.basename(src)), 'w') as f:
@@ -128,6 +146,7 @@ def generate_launch_description():
         ('extra_gz_args', '', 'Additional arguments for gz sim'),
         ('wave_gain', '', 'VRX wavefield gain (empty = as in the world file; empty_ocean 0.3, calm 0). docs/waves.md'),
         ('wave_period', '', 'VRX wavefield peak period [s] (empty = as in the world file; empty_ocean 5)'),
+        ('aux_views', 'False', 'True: GUI panels Side view / Top view (cameras: urdf xacro arg aux_views:=true)'),
     ]
     return LaunchDescription(
         [DeclareLaunchArgument(n, default_value=d, description=desc)

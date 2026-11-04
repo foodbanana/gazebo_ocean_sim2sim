@@ -75,6 +75,15 @@
     <xacro:include filename="$(arg arm_gazebo_xacro)"/>
   </xacro:if>
 
+  <!-- ===== operator views (GUI only, not recorded): Side / Top cameras on the arm root link, as Isaac Sim aux viewports.
+       wamv_arm.launch.py sets aux_views:=true with the GUI (aux_views.xacro, docs/teleop.md) ===== -->
+  <xacro:arg name="aux_views" default="false"/>
+  <xacro:arg name="aux_views_rate" default="15"/>
+  <xacro:if value="$(arg aux_views)">
+    <xacro:include filename="$(find ocean_sim2sim_description)/urdf/aux_views.xacro"/>
+    <xacro:aux_views parent="$(arg arm_root_link)" rate="$(arg aux_views_rate)"/>
+  </xacro:if>
+
   <!-- ===== collisions inside the model (arm <-> boat, arm <-> itself) =====
        Gazebo skips collisions between links of the same model unless self_collide is on.
        Links connected directly by a joint are still not checked against each other.

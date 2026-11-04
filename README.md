@@ -109,6 +109,8 @@ ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py wave_gain:=0.18 headless:=t
 | `rc_port` | (empty = `rc_input.yaml` port, `/dev/ttyACM0`) | `drone_motion:=rc`: serial device of the Pico that reads the transmitter receiver |
 | `hover_preset` | `mid` | `px4` + `hover` only: sine amplitude `small` / `mid` / `big` (Isaac Sim `drone_iris.yaml`) |
 | `prop_spin` | `true` | `px4` only: props turn for show (Isaac Sim rule). `false`: props held still |
+| `aux_views` | (empty = on with the GUI) | operator views `Side view` / `Top view` docked in the GUI (cameras on the robot base, Isaac Sim aux viewports; not recorded). `false` = off ([`docs/teleop.md`](docs/teleop.md)) |
+| `aux_views_rate` | `15` | aux view camera rate [Hz] |
 | `px4_dir` | `~/PX4-Autopilot` | PX4-Autopilot v1.16.0 directory (built with `make px4_sitl_default none`) |
 | `xacro_file` | `ocean_sim2sim_description/urdf/wamv_with_arm.urdf.xacro` | boat + arm description |
 | `xacro_args` | (empty) | extra xacro args (table below), e.g. `xacro_args:="collision_meshes:=convex"` |

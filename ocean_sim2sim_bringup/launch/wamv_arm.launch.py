@@ -43,8 +43,18 @@ def launch(context, *args, **kwargs):
     if arg('drone_motion') == 'rc' and arg('drone_mode') != 'px4':
         raise RuntimeError('drone_motion:=rc needs drone_mode:=px4 (the transmitter flies the PX4 drone)')
 
+    # operator views (Side / Top cameras + GUI panels, not recorded; Isaac Sim --aux-views: on with the GUI by default)
+    headless = arg('headless').lower() in ('true', '1', 'yes')
+    aux = arg('aux_views').lower()
+    if aux not in ('', 'true', 'false'):
+        raise RuntimeError(f"aux_views must be true, false or empty (= on with the GUI): {arg('aux_views')}")
+    aux = (not headless) if aux == '' else aux == 'true'
+    if aux and headless:
+        raise RuntimeError('aux_views:=true needs the GUI (headless:=False)')
+
     # 1. one URDF for everything
-    xacro_cmd = ['xacro', arg('xacro_file')] + shlex.split(arg('xacro_args'))
+    xacro_cmd = (['xacro', arg('xacro_file')] + shlex.split(arg('xacro_args'))
+                 + (['aux_views:=true', f"aux_views_rate:={arg('aux_views_rate')}"] if aux else []))
     urdf = subprocess.run(xacro_cmd, check=True, capture_output=True, text=True).stdout
     fd, urdf_path = tempfile.mkstemp(prefix='ocean_sim2sim_', suffix='.urdf')
     with os.fdopen(fd, 'w') as f:
@@ -61,6 +71,7 @@ def launch(context, *args, **kwargs):
             'paused': arg('paused'),
             'wave_gain': arg('wave_gain'),
             'wave_period': arg('wave_period'),
+            'aux_views': str(aux),
         }.items())
 
     # 3. robot description
@@ -173,6 +184,9 @@ def generate_launch_description():
         ('hover_preset', 'mid', 'px4 hover sine preset: small | mid | big (Isaac Sim drone_iris.yaml)'),
         ('prop_spin', 'true', 'px4: props turn for show (Isaac Sim rule: 100 rad/s at >= 0.1 N thrust, 5 rad/s below, '
                               '0 off; Isaac Sim default on with GUI, off headless). false = props held still'),
+        ('aux_views', '', 'operator views Side / Top in the GUI (empty = on with the GUI, off headless; not recorded). '
+                          'docs/teleop.md'),
+        ('aux_views_rate', '15', 'aux view camera rate [Hz]'),
         ('px4_dir', '~/PX4-Autopilot', 'PX4-Autopilot v1.16.0 directory (built: make px4_sitl_default none)'),
     ]
     return LaunchDescription(
