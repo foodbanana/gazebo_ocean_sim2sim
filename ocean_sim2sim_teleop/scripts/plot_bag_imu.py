@@ -6,7 +6,8 @@
 #   Figure (time = message header stamp, sim s from the first IMU sample):
 #     1. linear acceleration x / y / z [m/s^2] (specific force, includes gravity on z)
 #     2. angular velocity x / y / z [deg/s]
-#     3. roll / pitch from the IMU orientation [deg]
+#     3. roll / pitch from the IMU orientation and yaw change since the first sample (yaw - yaw0) [deg]
+#        (yaw relative: the absolute heading of the boat is far from 0 and would squash roll / pitch)
 #     4. robot base position from /base/odom x / y / z [m] (odom frame = robot base at the episode start)
 #     drone motors off times of episode.json drawn as vertical lines.
 #   Printed: rate, mean / std / min / max per axis. --csv writes base_imu.csv (+ base_odom.csv) next to the figure.
@@ -47,15 +48,16 @@ def stamp(m):
     return m.header.stamp.sec + m.header.stamp.nanosec * 1e-9
 
 
-def roll_pitch(q):
+def roll_pitch_yaw(q):
     x, y, z, w = q
     roll = math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
     pitch = math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x))))
-    return math.degrees(roll), math.degrees(pitch)
+    yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+    return math.degrees(roll), math.degrees(pitch), math.degrees(yaw)
 
 
-def stats(name, unit, a):
-    for i, ax in enumerate('xyz'[:a.shape[1]]):
+def stats(name, unit, a, axes=('x', 'y', 'z')):
+    for i, ax in enumerate(axes[:a.shape[1]]):
         v = a[:, i]
         print(f'  {name} {ax}: mean {v.mean():+.4f}  std {v.std():.4f}  min {v.min():+.4f}  max {v.max():+.4f} {unit}')
 
@@ -78,7 +80,10 @@ def main():
     t0 = t_imu[0]
     acc = np.array([[m.linear_acceleration.x, m.linear_acceleration.y, m.linear_acceleration.z] for m in imu])
     gyr = np.degrees(np.array([[m.angular_velocity.x, m.angular_velocity.y, m.angular_velocity.z] for m in imu]))
-    rp = np.array([roll_pitch((m.orientation.x, m.orientation.y, m.orientation.z, m.orientation.w)) for m in imu])
+    rpy = np.array([roll_pitch_yaw((m.orientation.x, m.orientation.y, m.orientation.z, m.orientation.w)) for m in imu])
+    yaw0 = rpy[0, 2]
+    rpy[:, 2] = np.degrees(np.unwrap(np.radians(rpy[:, 2]))) - yaw0      # yaw change since the first sample
+    rp = rpy
     dt = np.diff(t_imu)
     # rate = samples / time (Gazebo sends sensors on physics steps only: at 240 Hz physics a 100 Hz IMU comes every
     # 8.33 or 12.5 ms, so the median interval is not the rate)
@@ -88,7 +93,8 @@ def main():
           f'(intervals {top}; max {dt.max() * 1000:.2f} ms), frame {imu[0].header.frame_id}')
     stats('accel', 'm/s^2', acc)
     stats('gyro ', 'deg/s', gyr)
-    stats('roll/pitch', 'deg', rp)
+    print(f'  roll / pitch / yaw-yaw0 (yaw0 = heading {yaw0:+.2f} deg):')
+    stats('', 'deg', rp, ('roll', 'pitch', 'yaw-yaw0'))
     pos = t_odom = None
     if odom:
         t_odom = np.array([stamp(m) for m in odom]) - t0
@@ -116,7 +122,8 @@ def main():
             ax[3].plot(t_odom, pos[:, k], lw=0.9, label=lab)
     ax[2].plot(t, rp[:, 0], lw=0.8, label='roll')
     ax[2].plot(t, rp[:, 1], lw=0.8, label='pitch')
-    for axis, yl in zip(ax, ['linear acc [m/s^2]', 'angular vel [deg/s]', 'roll / pitch [deg]', 'base pos (odom) [m]']):
+    ax[2].plot(t, rp[:, 2], lw=0.8, label=f'yaw - yaw0 ({yaw0:+.1f})')
+    for axis, yl in zip(ax, ['linear acc [m/s^2]', 'angular vel [deg/s]', 'roll / pitch / yaw [deg]', 'base pos (odom) [m]']):
         axis.set_ylabel(yl)
         axis.grid(alpha=0.3)
         axis.legend(loc='upper right', fontsize=8, ncol=3)
@@ -132,7 +139,7 @@ def main():
         d = os.path.dirname(out)
         with open(os.path.join(d, 'base_imu.csv'), 'w', newline='') as f:
             w = csv.writer(f)
-            w.writerow(['t', 'ax', 'ay', 'az', 'gx_dps', 'gy_dps', 'gz_dps', 'roll_deg', 'pitch_deg'])
+            w.writerow(['t', 'ax', 'ay', 'az', 'gx_dps', 'gy_dps', 'gz_dps', 'roll_deg', 'pitch_deg', 'yaw_minus_yaw0_deg'])
             w.writerows(np.column_stack([t, acc, gyr, rp]).round(6).tolist())
         if pos is not None:
             with open(os.path.join(d, 'base_odom.csv'), 'w', newline='') as f:

@@ -32,7 +32,7 @@ Isaac 쪽 설명: `docs/pico_vr_data_collection.md` (PICO), `docs/drone_teleop.m
 | `ocean_sim2sim_teleop/ik_model.py` | URDF 체인 `robot_mount` → `rh_p12_rn_tcp` FK·Jacobian·IK 한 스텝 | `teleop/ik_model.py` |
 | `ocean_sim2sim_teleop/config/xr_teleop.yaml` | 배율·필터·버튼·안전 기준 | `teleop/xr_teleop.yaml` |
 | `scripts/record_toggle.py`, `config/recorder.yaml` | rosbag2 녹화 토글 (키 r·k·d·q, 컨트롤러 A·B·X) | `record_toggle.py` (`--sim --base moving`) |
-| `scripts/plot_bag_imu.py` | bag 의 `/base/imu`·`/base/odom` 그래프·통계·CSV | 새로 |
+| `scripts/plot_bag_imu.py` | bag 의 `/base/imu`·`/base/odom` 그래프 (가속도, 각속도, roll·pitch·yaw 변화 (첫 값 기준), base 위치)·통계·CSV | 새로 |
 | `scripts/check_xr_teleop.py`, `ocean_sim2sim_drone/scripts/check_rc.py` | 헤드셋·조종기 없이 시험 | `teleop/check_xr_teleop.py`, Isaac 가짜 직렬 시험 |
 
 ## 2. 처음 한 번만
