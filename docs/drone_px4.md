@@ -81,6 +81,9 @@ python3 src/gazebo_ocean_sim2sim/ocean_sim2sim_drone/scripts/drone_cmd.py status
 
 VRX 기본 WAM-V IMU 그대로 (사용자 결정 2026-11-03): `wamv/base_link` 기준 (0.3, −0.2, 1.3), 100 Hz, VRX 잡음 (자이로 0.009 rad/s 등),
 `sensor_msgs/Imu` 비력 (정지 = +9.81). Isaac Sim 학습 데이터 (`/base/imu` 120 Hz, 잡음 없음, 로봇 base 강체) 와 주기·잡음·위치가 다르다 → gap.
+**주기는 100 Hz 유지 (2026-11-04 사용자 결정)**: 실제 배에서 받은 IMU 데이터가 100 Hz 라 실물 기준으로 둔다. 물리 240 Hz 와 나눠떨어지지 않아
+샘플 간격이 고르지 않을 수 있지만, 정책 클라이언트는 직전 40 ms 평균을 쓰므로 영향은 작다. Isaac Sim 쪽 (120 Hz) 을 나중에 100 Hz 로 맞추면
+학습·sim2sim·실물이 같은 주기가 된다.
 frame_id 는 Gazebo 이름 (`wamv/wamv/imu_wamv_link/imu_wamv_sensor`, Isaac `imu_link`).
 
 `/base/odom` (`nav_msgs/Odometry`, Isaac Sim `ros2_iface.yaml` base 와 같은 형식, scene_node): 30 Hz, stamp = sim time 1/30 s 배수,
