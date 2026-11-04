@@ -188,8 +188,8 @@ class SceneNode(Node):
         self.create_subscription(String, '/robot_description', self._on_description, latched)
         # arm state for the reset: protective stop (go via the escape pose first) and arrival check
         self.q_arm, self.protective_stop = {}, False
-        self.create_subscription(JointState, '/joint_states', lambda m: self.q_arm.update(zip(m.name, m.position)), 10,
-                                 callback_group=self.cb)
+        self.t_js = None                  # wall time of the last /joint_states (arm controllers up)
+        self.create_subscription(JointState, '/joint_states', self._on_joint_states, 10, callback_group=self.cb)
         self.create_subscription(Bool, '/protective_stop', lambda m: setattr(self, 'protective_stop', m.data), 10,
                                  callback_group=self.cb)
         self.create_subscription(Odometry, '/sim/boat_odometry', self._on_boat_odometry, 10)
@@ -453,11 +453,28 @@ class SceneNode(Node):
         offset = [rng.uniform(-self.drone_offset, self.drone_offset) for _ in range(3)]
         return name, target, offset
 
+    def _on_joint_states(self, m):
+        self.q_arm.update(zip(m.name, m.position))
+        self.t_js = time.time()
+
+    def arm_not_ready(self):
+        """Why the arm cannot be reset now (None = ready): /joint_states of all arm joints within the last 1 s wall.
+        Checked BEFORE anything changes: the controllers can come up a minute late (spawner waits 60 s when a
+        controller_manager answer is lost), and a reset before that removed the drone and then failed (2026-11-04)."""
+        missing = [j for j in self.arm_joints if j not in self.q_arm]
+        if self.t_js is None or missing:
+            return f'arm controllers not up yet (no /joint_states for {missing or self.arm_joints})'
+        if time.time() - self.t_js > 1.0:
+            return f'/joint_states stale for {time.time() - self.t_js:.1f} s (arm controllers / sim stopped?)'
+        return None
+
     def _on_reset(self, req, res):
-        if self.busy or not self.spawned:
+        why = ('scene not ready yet (drone not spawned)' if not self.spawned else 'reset already running' if self.busy
+               else self.arm_not_ready())
+        if why:
             res.success = False
-            res.message = json.dumps({'error': 'scene not ready yet (drone not spawned)' if not self.spawned
-                                      else 'reset already running'})
+            res.message = json.dumps({'error': why + ' - nothing changed, try again'})
+            self.get_logger().warn(f'/sim/reset refused: {why}')
             return res
         self.busy = True
         t0, w0 = self.now(), time.time()
