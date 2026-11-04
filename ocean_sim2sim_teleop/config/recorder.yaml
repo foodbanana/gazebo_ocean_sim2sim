@@ -1,0 +1,31 @@
+# =============================================================
+# recorder.yaml - topics of the episode recorder (scripts/record_toggle.py, docs/teleop.md)
+#
+#   Same topics as the Isaac Sim recorder (data_collection_ur5_gripper record_toggle.py) in its sim + moving-base mode
+#   (--sim --base moving), wrist camera only. /base/joint_states (Stewart platform joints) does not exist on the boat.
+#   State topics must have a publisher before a recording starts (no silent empty bag). Command topics appear when
+#   the teleop node publishes. The drone (pose, transmitter input) is not recorded (Isaac decision 2026-10-08).
+# =============================================================
+
+state_topics:
+  - /joint_states             # arm joints (state)
+  - /gripper/joint_states     # gripper raw (state)
+  - /gripper/target           # gripper action (last goal raw, published every loop)
+  - /protective_stop          # interface protective stop
+  - /clock                    # sim time
+  - /base/imu                 # boat IMU next to the robot base (100 Hz, VRX noise), Isaac moving-base topic
+  - /base/odom                # robot base pose / twist (odom frame = robot base at the episode start)
+command_topics:
+  - /joint_command            # arm action (teleop node)
+  - /gripper/command          # gripper command (reference)
+cameras:                      # role -> topics (image RELIABLE)
+  wrist:
+    topic: /cam/wrist/color/image_raw
+    info_topic: /cam/wrist/color/camera_info
+
+# receive queue of the recorder in seconds of messages (the recorder may not take messages for 0.4 ~ 0.7 s after it
+# starts; Isaac docs/PLAN.md 4, A1). depth = queue_sec x rate
+queue_sec: 3.0
+topic_hz: {/joint_states: 125.0, /clock: 250.0, /base/imu: 100.0}   # others 30 Hz
+
+reset_timeout: 300.0          # [s wall] /sim/reset answer (PX4 air start about 25 s sim)

@@ -105,7 +105,8 @@ ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py wave_gain:=0.18 headless:=t
 | `wave_gain` | (empty = world file value) | VRX wavefield gain ([`docs/waves.md`](docs/waves.md)) |
 | `wave_period` | (empty = world file value) | VRX wavefield peak period [s] |
 | `drone_mode` | `px4` | `px4`: PX4 SITL v1.16.0 flies the drone (venv + PX4-Autopilot needed). `fixed`: drone held still on a world-fixed anchor |
-| `drone_motion` | `hover` | `px4` only. `static`: hold the hover point. `hover`: sine motion around it (Isaac Sim data collection setting) |
+| `drone_motion` | `hover` | `px4` only. `static`: hold the hover point. `hover`: sine motion around it (Isaac Sim data collection setting). `rc`: a pilot flies it with the real transmitter after the air start ([`docs/teleop.md`](docs/teleop.md)) |
+| `rc_port` | (empty = `rc_input.yaml` port, `/dev/ttyACM0`) | `drone_motion:=rc`: serial device of the Pico that reads the transmitter receiver |
 | `hover_preset` | `mid` | `px4` + `hover` only: sine amplitude `small` / `mid` / `big` (Isaac Sim `drone_iris.yaml`) |
 | `prop_spin` | `true` | `px4` only: props turn for show (Isaac Sim rule). `false`: props held still |
 | `px4_dir` | `~/PX4-Autopilot` | PX4-Autopilot v1.16.0 directory (built with `make px4_sitl_default none`) |
@@ -222,6 +223,7 @@ Run with the main launch up (except `regression.py`, which starts its own). Repo
 | `ros2 run ocean_sim2sim_policy policy_client_node.py --reset --episodes 5 --duration 30` | policy client only (same CLI as the Isaac Sim client, no judge) | [`docs/policy.md`](docs/policy.md) |
 | `ros2 run ocean_sim2sim_policy fake_policy_server.py [--delay 0.18]` | fake openpi server (constant action chunks) to test the plumbing without a model | [`docs/policy.md`](docs/policy.md) |
 | `ros2 run ocean_sim2sim_drone drone_link_test.py --test hover` | drone plugin check without PX4 (`drone_mode:=fixed`) | [`docs/drone_px4.md`](docs/drone_px4.md) |
+| `ros2 run ocean_sim2sim_drone rc_watch.py [--port DEV]` | transmitter serial values and mapped sticks (no sim) | [`docs/teleop.md`](docs/teleop.md) |
 
 ### Policy inference
 
@@ -243,6 +245,27 @@ ros2 service call /sim/drone_kill std_srvs/srv/Trigger
 The client sends the wrist image only (no third-view camera), state = arm 6 joints + gripper, and executes 10-step
 action chunks at 60 Hz with the Isaac Sim safety limits. Configuration: `ocean_sim2sim_policy/config/policy_client.yaml`.
 
+### Teleoperation and recording
+
+Same operation as the Isaac Sim data collection ([`docs/teleop.md`](docs/teleop.md)): the arm follows a PICO 4 Ultra
+controller (XRoboToolkit; its Python binding lives in its own venv, `~/xrobotoolkit/venv` or `XR_PYTHON`), a pilot can fly
+the PX4 drone with a Radiolink transmitter (receiver -> Raspberry Pi Pico -> USB serial), and episodes are recorded as
+rosbag2 bags with the boat IMU and base odometry.
+
+```bash
+# terminal 1 (venv active): sim; drone_motion:=rc hands the drone to the transmitter after the air start
+ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py drone_motion:=rc rc_port:=/dev/ttyACM0
+# terminal 2: arm teleop (XRoboToolkit PC service running, headset app WORKING, both controllers sent)
+ros2 run ocean_sim2sim_teleop xr_teleop_node.py
+# terminal 3: recorder (keys r / k / d / q; controller A record, B reset, X drone motors off). Bags: ~/ocean_sim2sim_bags
+ros2 run ocean_sim2sim_teleop record_toggle.py <task name>
+# afterwards: boat IMU / base motion of a bag
+ros2 run ocean_sim2sim_teleop plot_bag_imu.py ~/ocean_sim2sim_bags/<bag> --csv
+```
+
+Without the devices: `ros2 run ocean_sim2sim_teleop check_xr_teleop.py` (scripted controller against the running sim) and
+`ros2 run ocean_sim2sim_drone check_rc.py --link <path>` (fake Pico on a pty, launch with `rc_port:=<path>`).
+
 ## Packages
 
 | Package | Contents |
@@ -254,7 +277,8 @@ action chunks at 60 Hz with the Isaac Sim safety limits. Configuration: `ocean_s
 | `ocean_sim2sim_interface` | `interface_node`: real-robot / Isaac Sim topics on top of ros2_control (`/joint_command`, `/gripper/*`, `/joint_states`, `/protective_stop`); `scene_node`: the drone episode (`/sim/reset`, `/sim/drone_kill`, `/base/odom`); grasp judge, kinematics, observation helpers |
 | `ocean_sim2sim_drone` | PX4 SITL drone: `DroneLockstep` Gazebo system (C++), `px4_bridge_node.py` (MAVLink HIL lockstep, virtual sensors, thrust model, Offboard commander, ported from the Isaac Sim / Pegasus code), `drone_cmd.py` CLI |
 | `ocean_sim2sim_gz_plugins` | Gazebo system `ContactMonitor` (per-link contact forces of the arm for the protective stop, [`docs/interface.md`](docs/interface.md) 8) |
-| `ocean_sim2sim_policy` | openpi policy client (port of the Isaac Sim client: observation pairing, action chunks at 60 Hz, safety limits), judged evaluation runner, fake server, offline test |
+| `ocean_sim2sim_policy` | openpi policy client (port of the Isaac Sim client: observation pairing, action chunks at 60 Hz, safety limits), fake server, offline test |
+| `ocean_sim2sim_teleop` | PICO VR arm teleop node (port of the Isaac Sim `xr_teleop_node`: One Euro filter, differential IK from `/robot_description`, controller buttons), episode recorder `record_toggle.py`, `plot_bag_imu.py`, headset-less test |
 
 ### Boat with an arm
 
@@ -287,6 +311,7 @@ Arm control: `gz_ros2_control` with `joint_trajectory_controller` (position) for
 | [`docs/waves.md`](docs/waves.md) | wave settings and measured base motion per wave gain, comparison with the Isaac Sim moving base |
 | [`docs/policy.md`](docs/policy.md) | openpi policy client (`policy_client_node.py`) |
 | [`docs/regression.md`](docs/regression.md) | one-command regression suite (`regression.py`), checks and expected values |
+| [`docs/teleop.md`](docs/teleop.md) | PICO VR arm teleop, transmitter drone teleop, episode recording, IMU plots |
 
 ## Known sim2sim gaps
 

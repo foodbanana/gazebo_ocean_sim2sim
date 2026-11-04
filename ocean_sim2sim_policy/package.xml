@@ -4,7 +4,7 @@
   <name>ocean_sim2sim_policy</name>
   <version>0.1.0</version>
   <description>openpi policy client for the ocean sim (port of the Isaac Sim policy client: observation pairing, action
-    chunk execution, safety limits) and a judged policy evaluation runner.</description>
+    chunk execution, safety limits), fake policy server and offline test.</description>
   <maintainer email="taeung1203ai@gmail.com">taeung</maintainer>
   <license>Apache-2.0</license>
 
@@ -18,9 +18,6 @@
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
-  <!-- policy_eval.py: judge (grasp_judge, observe) and its config (grasp_demo.yaml judge section) -->
-  <exec_depend>ocean_sim2sim_interface</exec_depend>
-  <exec_depend>ocean_sim2sim_bringup</exec_depend>
   <!-- openpi-client: Python venv, see README (not a rosdep key) -->
   <test_depend>ament_cmake_pytest</test_depend>
 
