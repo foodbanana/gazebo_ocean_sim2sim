@@ -41,7 +41,8 @@
 #       hover_mode, hover_preset, hover_seed (defaults for the reference), prop_spin (true: props turn with the Isaac
 #       rule, like Isaac Sim with GUI; false: held still, like Isaac Sim headless), use_sim_time (forced true),
 #       rc (true: real transmitter, drone_rc.DroneRc every exchange before PX4Commander.tick = Isaac --drone-rc on),
-#       rc_config (config/rc_input.yaml), rc_port (serial device, empty = rc_config port)
+#       rc_config (config/rc_input.yaml), rc_port (serial device, empty = rc_config port; auto = find the Pico in
+#       /dev/serial/by-id by name)
 #   Transmitter (rc true): rc_input.yaml px4_params are added to the PX4 start parameters; the scene must fly a static
 #     reference (hover sine + transmitter = two drivers, refused by the launch file as in Isaac). A serial error (Pico
 #     unplugged) switches the transmitter off for this run: taken back to Offboard hover + error log (Isaac: exception).
@@ -148,13 +149,13 @@ class PX4BridgeNode(Node):
         self.cmd.hover_hook = self._on_cli
         self.drone_rc, self.rc_error = None, None
         if self.rc_cfg is not None:
-            port = gp("rc_port") or self.rc_cfg["port"]
+            port = rc_input.resolve_port(self.rc_cfg, gp("rc_port") or None)
             try:
                 self.drone_rc = DroneRc(self.cmd, self.rc_cfg, lambda: 0.0 if self.t is None else self.t, port,
                                         log=self.get_logger().info)
             except OSError as e:
                 raise RuntimeError(f"transmitter serial device {port}: {e} (plugged in? dialout group? rc_port:=...)") from e
-            self.get_logger().info(f"transmitter: {port} ({gp('rc_config')}), PX4 start params + {self.rc_cfg['px4_params']}, "
+            self.get_logger().info(f"transmitter: {port} -> {os.path.realpath(port)} ({gp('rc_config')}), PX4 start params + {self.rc_cfg['px4_params']}, "
                                    f"at hand-over {self.rc_cfg['handover_params']}")
         self.presets = cfg["hover_presets"]
         self.ref = self._make_reference({}, np.zeros(3))

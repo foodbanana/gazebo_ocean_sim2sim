@@ -106,7 +106,7 @@ ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py wave_gain:=0.18 headless:=t
 | `wave_period` | (empty = world file value) | VRX wavefield peak period [s] |
 | `drone_mode` | `px4` | `px4`: PX4 SITL v1.16.0 flies the drone (venv + PX4-Autopilot needed). `fixed`: drone held still on a world-fixed anchor |
 | `drone_motion` | `hover` | `px4` only. `static`: hold the hover point. `hover`: sine motion around it (Isaac Sim data collection setting). `rc`: a pilot flies it with the real transmitter after the air start ([`docs/teleop.md`](docs/teleop.md)) |
-| `rc_port` | (empty = `rc_input.yaml` port, `/dev/ttyACM0`) | `drone_motion:=rc`: serial device of the Pico that reads the transmitter receiver |
+| `rc_port` | (empty = `rc_input.yaml` port: `auto`) | `drone_motion:=rc`: serial device of the Pico that reads the transmitter receiver. `auto` finds the one `/dev/serial/by-id` entry named `usb-MicroPython_Board...` (error with the list if none or several) |
 | `hover_preset` | `mid` | `px4` + `hover` only: sine amplitude `small` / `mid` / `big` (Isaac Sim `drone_iris.yaml`) |
 | `prop_spin` | `true` | `px4` only: props turn for show (Isaac Sim rule). `false`: props held still |
 | `aux_views` | (empty = on with the GUI) | operator views `Side view` / `Top view` docked in the GUI (cameras on the robot base, Isaac Sim aux viewports; not recorded). `false` = off ([`docs/teleop.md`](docs/teleop.md)) |
@@ -256,7 +256,7 @@ rosbag2 bags with the boat IMU and base odometry.
 
 ```bash
 # terminal 1 (venv active): sim; drone_motion:=rc hands the drone to the transmitter after the air start
-ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py drone_motion:=rc rc_port:=/dev/ttyACM0
+ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py drone_motion:=rc      # Pico found automatically
 # terminal 2: arm teleop (XRoboToolkit PC service running, headset app WORKING, both controllers sent)
 ros2 run ocean_sim2sim_teleop xr_teleop_node.py
 # terminal 3: recorder (keys r / k / d / q; controller A record, B reset, X drone motors off). Bags: ocean_gazebo_bags/ in this repo (git-ignored)

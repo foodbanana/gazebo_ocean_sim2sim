@@ -7,10 +7,12 @@
 #   start at 1), 142.9 Hz.
 # =============================================================
 
-# Serial device. /dev/serial/by-id/... does not change with the plug order (/dev/ttyACM0 may). Override with the launch
-# argument rc_port:=... (another Pico / PC). Isaac Sim used
-#   /dev/serial/by-id/usb-MicroPython_Board_in_FS_mode_e6647c15678f4f38-if00
-port: /dev/ttyACM0
+# Serial device. auto = the one entry of /dev/serial/by-id whose name contains port_match (stable name, independent of
+# the plug order; no serial number here, so any MicroPython Pico works). None or several -> error with the list.
+# Or a path (/dev/ttyACM0, /dev/serial/by-id/...). The launch argument rc_port:=... overrides it.
+#   (Isaac Sim used /dev/serial/by-id/usb-MicroPython_Board_in_FS_mode_e6647c15678f4f38-if00)
+port: auto
+port_match: usb-MicroPython_Board
 baudrate: 115200            # USB serial: the real speed does not depend on it
 stale_sec: 0.2              # wall [s]. No line for this long = no input (Pico / USB problem; normal interval 7 ms)
 

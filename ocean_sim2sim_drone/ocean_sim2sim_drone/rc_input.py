@@ -120,7 +120,7 @@ def load_config(path):
 
     with open(path, encoding="utf-8") as fh:
         cfg = yaml.safe_load(fh)
-    for k in ("port", "baudrate", "stale_sec", "lost_flags", "axes", "range_margin", "deadzone", "handover_center", "px4_params",
+    for k in ("port", "port_match", "baudrate", "stale_sec", "lost_flags", "axes", "range_margin", "deadzone", "handover_center", "px4_params",
               "handover_params"):
         if k not in cfg:
             raise KeyError(f"{path}: missing '{k}'")
@@ -139,6 +139,30 @@ def load_config(path):
             raise ValueError(f"{path}: axes.{name} needs min < center < max, sign +-1: {ax}")
     cfg["path"] = path
     return cfg
+
+
+BY_ID = "/dev/serial/by-id"
+
+
+def resolve_port(cfg, port=None):
+    """Serial device to open: port (argument) or cfg port; 'auto' = the one /dev/serial/by-id entry whose name contains
+    cfg port_match. None or several matches -> RuntimeError with what was found (no silent pick)."""
+    p = port or cfg["port"]
+    if p != "auto":
+        return p
+    try:
+        names = sorted(os.listdir(BY_ID))
+    except OSError:
+        names = []
+    hits = [n for n in names if cfg["port_match"] in n]
+    if len(hits) == 1:
+        return os.path.join(BY_ID, hits[0])
+    found = ", ".join(names) or "nothing"
+    if not hits:
+        raise RuntimeError(f"no serial device with '{cfg['port_match']}' in {BY_ID} (found: {found}). Pico plugged in? "
+                           "Or give the device: rc_port:=/dev/ttyACM0")
+    raise RuntimeError(f"several serial devices with '{cfg['port_match']}' in {BY_ID}: {', '.join(hits)}. "
+                       "Give one: rc_port:=<path>")
 
 
 class RcMap:
@@ -172,7 +196,8 @@ class RcInput:
 
     def __init__(self, cfg, port=None):
         self.cfg, self.map = cfg, RcMap(cfg)
-        self.reader = RcReader(cfg["port"] if not port else port, cfg["baudrate"])
+        self.port = resolve_port(cfg, port)
+        self.reader = RcReader(self.port, cfg["baudrate"])
         self.reader.start()
 
     def poll(self):
@@ -193,6 +218,7 @@ class RcInput:
 def watch(cfg, port=None, rate_hz=10.0):
     """Print raw values and the mapped sticks until Ctrl+C."""
     rc = RcInput(cfg, port)
+    print(f"device {rc.port} ({os.path.realpath(rc.port)})", flush=True)
     try:
         while True:
             time.sleep(1.0 / rate_hz)

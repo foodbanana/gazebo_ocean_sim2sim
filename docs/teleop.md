@@ -41,15 +41,16 @@ Isaac 쪽 설명: `docs/pico_vr_data_collection.md` (PICO), `docs/drone_teleop.m
   `docs/pico_vr_data_collection.md` 2 장대로 설치 (이 PC 에는 있음). 노드는 지금 python 이 `xrobotoolkit_sdk` 를 못 읽으면
   `$XR_PYTHON` 또는 `~/xrobotoolkit/venv/bin/python` 으로 스스로 다시 실행된다
 - **조종기**: 계정을 `dialout` 그룹에 (`sudo usermod -aG dialout $USER` 뒤 다시 로그인). sim 을 sudo 로 띄우지 않는다.
-  장치 확인 (sim 없이): `ros2 run ocean_sim2sim_drone rc_watch.py [--port /dev/ttyACM0]` → 스틱을 움직이면 값이 바뀐다
+  장치 확인 (sim 없이): `ros2 run ocean_sim2sim_drone rc_watch.py` (장치 자동, 첫 줄에 고른 장치) → 스틱을 움직이면 값이 바뀐다
 
 ## 3. 실행 (터미널마다 `source /opt/ros/jazzy/setup.bash && source ~/vrx_ws/install/setup.bash`, sim 터미널은 venv 도)
 
 ```bash
 # 터미널 1: sim. 드론을 조종기로: drone_motion:=rc (기본 hover = 조종자 없이 사인파)
 source ~/vrx_ws/.venv/bin/activate
-ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py drone_motion:=rc rc_port:=/dev/serial/by-id/<Pico 장치>
-#   rc_port 를 안 주면 rc_input.yaml port (/dev/ttyACM0). 파도: wave_gain:=..., 잔잔한 물: world:=empty_ocean_calm
+ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py drone_motion:=rc
+#   Pico 장치는 자동으로 찾는다 (rc_input.yaml port: auto = /dev/serial/by-id 에서 이름에 usb-MicroPython_Board 가 든 것 하나).
+#   없거나 둘 이상이면 찾은 목록과 함께 에러. 직접 주려면 rc_port:=/dev/ttyACM0. 파도: wave_gain:=..., 잔잔한 물: world:=empty_ocean_calm
 
 # 터미널 2: PICO 팔 텔레옵 (PC 서비스 실행 중, 헤드셋 앱 WORKING · 오른손·왼손 Send)
 pgrep -af RoboticsServiceProcess || env -u LD_LIBRARY_PATH bash /opt/apps/roboticsservice/runService.sh

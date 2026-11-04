@@ -180,7 +180,8 @@ def generate_launch_description():
         ('drone_mode', 'px4', 'px4 = PX4 SITL flies the drone (venv + PX4-Autopilot needed); fixed = held on a world anchor'),
         ('drone_motion', 'hover', 'px4: static, hover (sine around the hover point, Isaac Sim collection setting) or rc '
                                   '(real transmitter via the Pico serial device after the air start, docs/teleop.md)'),
-        ('rc_port', '', 'drone_motion rc: serial device of the Pico (empty = ocean_sim2sim_drone config/rc_input.yaml port)'),
+        ('rc_port', '', 'drone_motion rc: serial device of the Pico (empty = config/rc_input.yaml port: auto = the MicroPython Pico '
+                   'found in /dev/serial/by-id)'),
         ('hover_preset', 'mid', 'px4 hover sine preset: small | mid | big (Isaac Sim drone_iris.yaml)'),
         ('prop_spin', 'true', 'px4: props turn for show (Isaac Sim rule: 100 rad/s at >= 0.1 N thrust, 5 rad/s below, '
                               '0 off; Isaac Sim default on with GUI, off headless). false = props held still'),

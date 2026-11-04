@@ -10,6 +10,6 @@ from ocean_sim2sim_drone import rc_input
 
 ap = argparse.ArgumentParser(description=__doc__)
 ap.add_argument("--config", default=os.path.join(get_package_share_directory("ocean_sim2sim_drone"), "config", "rc_input.yaml"))
-ap.add_argument("--port", default=None, help="serial device (default: config port)")
+ap.add_argument("--port", default=None, help="serial device (default: config port, auto = find the Pico)")
 a = ap.parse_args()
 rc_input.watch(rc_input.load_config(a.config), a.port)
