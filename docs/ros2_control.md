@@ -13,6 +13,8 @@ WAM-V 상판에 붙인 UR5 6축과 RH-P12-RN 그리퍼를 Gazebo 안에서 ros2_
 
 ## 1. 실행
 
+> launch 인자 전체 (drone_mode, wave_gain, prop_spin 등) 는 README 의 Run 표 참고. 아래는 ros2_control 관련만.
+
 ```bash
 source /opt/ros/jazzy/setup.bash
 source ~/vrx_ws/install/setup.bash

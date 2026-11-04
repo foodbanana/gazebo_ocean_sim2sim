@@ -2,7 +2,7 @@
 
 작성: 2026-11-02 · 패키지 `ocean_sim2sim_gazebo` (드론 모델), `ocean_sim2sim_interface` (`scene_node`)
 
-PX4 SITL 드론을 붙이기 전까지 쓰는 **드론 (Iris 0.75 배, world 고정 호버)**과 에피소드 서비스. Isaac Sim 드론 파지 씬과 같은 드론·위치·서비스를 쓴다.
+**드론 (Iris 0.75 배)** 과 에피소드 서비스. `drone_mode:=fixed` = world 고정 호버 (이 문서), 기본 `drone_mode:=px4` = PX4 SITL 이 날림 (`docs/drone_px4.md`). Isaac Sim 드론 파지 씬과 같은 드론·위치·서비스를 쓴다.
 
 ---
 
@@ -18,7 +18,7 @@ ros2 service call /sim/drone_kill std_srvs/srv/Trigger     # 드론 모터 정�
 
 | 서비스 | 동작 |
 |---|---|
-| `/sim/reset` (std_srvs/Trigger) | 에피소드 시작 상태로 (7 장). message = JSON |
+| `/sim/reset` (std_srvs/Trigger) | 에피소드 시작 상태로 (6 장). message = JSON |
 | `/sim/drone_kill` (std_srvs/Trigger) | 드론을 앵커에서 떼어 떨어뜨림 (= 모터 정지). message = JSON `{"sim_time": ...}`. 이미 떨어져 있으면 `success=False` |
 
 처음 드론이 뜨기 전 (sim 약 8 s) 에는 두 서비스 모두 `success=False` (`scene not ready yet`).

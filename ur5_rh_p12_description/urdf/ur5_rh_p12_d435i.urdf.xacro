@@ -52,7 +52,8 @@
   <!-- collision meshes:
        original : the meshes as given (an importer that approximates them itself, e.g. Isaac Sim / PhysX)
        convex   : what Isaac Sim actually collides with: convex hull per link, forearm convex decomposition
-                  (meshes/collision_convex, scripts/build_collision_hulls.py). Gazebo uses this (docs/grasp.md). -->
+                  (meshes/collision_convex, scripts/build_collision_hulls.py). Same shapes as Isaac Sim; Gazebo uses original
+                  by default (DART + Bullet: one contact point per convex pair, docs/grasp.md 1-1). -->
   <xacro:arg name="collision_meshes" default="original"/>
   <xacro:property name="cm" value="$(arg collision_meshes)"/>
   <xacro:unless value="${cm in ('original', 'convex')}">${xacro.fatal('collision_meshes must be original or convex: ' + cm)}</xacro:unless>
