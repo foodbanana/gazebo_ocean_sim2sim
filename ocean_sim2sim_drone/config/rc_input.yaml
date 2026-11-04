@@ -1,0 +1,43 @@
+# =============================================================
+# rc_input.yaml - real transmitter input (ocean_sim2sim_drone/rc_input.py, drone_rc.py, docs/teleop.md)
+#
+#   Copied from data_collection_ur5_gripper isaacsim/config/rc_input.yaml (values measured there 2026-10-08, axis
+#   directions confirmed by flying the Isaac Sim drone with the transmitter).
+#   Radiolink transmitter -> receiver -> Raspberry Pi Pico -> USB serial. One line = "RC," + 10 integers (value numbers
+#   start at 1), 142.9 Hz.
+# =============================================================
+
+# Serial device. /dev/serial/by-id/... does not change with the plug order (/dev/ttyACM0 may). Override with the launch
+# argument rc_port:=... (another Pico / PC). Isaac Sim used
+#   /dev/serial/by-id/usb-MicroPython_Board_in_FS_mode_e6647c15678f4f38-if00
+port: /dev/ttyACM0
+baudrate: 115200            # USB serial: the real speed does not depend on it
+stale_sec: 0.2              # wall [s]. No line for this long = no input (Pico / USB problem; normal interval 7 ms)
+
+# signal status values (0 = ok). Transmitter off: value 2 turns 1 first, value 1 about 0.5 s later -> any non-zero = lost
+lost_flags: [1, 2]
+
+# 4 stick axes: index = value number, min / center / max = measured, sign +1 = + when the value grows
+#   + directions: pitch forward (stick up), roll right, throttle up, yaw right (as PX4 MANUAL_CONTROL)
+#   left stick = throttle / yaw, right stick = pitch / roll
+axes:
+  roll:     {index: 3, min: 200, center: 1003, max: 1800, sign: 1}
+  pitch:    {index: 4, min: 204, center: 999,  max: 1800, sign: -1}    # right stick up = value gets smaller
+  throttle: {index: 5, min: 217, center: 993,  max: 1800, sign: 1}
+  yaw:      {index: 6, min: 200, center: 994,  max: 1800, sign: 1}
+range_margin: 60            # up to this far outside the measured min / max = end value; further = bad input (like signal lost)
+deadzone: 0.02              # on the normalised value (-1 ~ 1). PX4 adds its own MPC_HOLD_DZ 0.1
+handover_center: 0.1        # all 4 axes inside this to hand over (the drone does not jump at the hand-over)
+
+# PX4 parameters at PX4 start when the transmitter is used (merged into drone_px4.yaml params)
+px4_params:
+  MAN_ARM_GESTURE: 0        # no arm / disarm by stick gesture (arm = scene, motors off = /sim/drone_kill)
+
+# PX4 parameters set just before the hand-over (float only: runtime PARAM_SET, hand-over after PARAM_VALUE confirms).
+#   At PX4 start they would also slow down the Offboard climb (vertical limit). A reset restarts PX4 -> default values
+#   until the next hand-over.
+handover_params:
+  MPC_VEL_MANUAL: 0.5       # m/s, horizontal speed at full stick in Position mode (PX4 default 10)
+  MPC_MAN_Y_MAX: 60.0       # deg/s, yaw rate at full stick (PX4 default 150)
+  MPC_Z_VEL_MAX_UP: 0.5     # m/s, vertical speed limits (PX4 default 3 / 1.5). Also applies in Offboard
+  MPC_Z_VEL_MAX_DN: 0.5

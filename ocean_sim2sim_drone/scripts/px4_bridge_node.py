@@ -31,19 +31,26 @@
 #                                reference if it is not running (mode / preset / seed from the parameters), else moves p0
 #                                (hover sine continues)
 #       /drone/px4/reference_cmd std_msgs/String JSON {"mode": "static"|"hover", "preset": "small"|"mid"|"big",
-#                                "seed": int, "p0": [x, y, z]} (all optional: parameters / current p0 / true position).
-#                                (Re)starts the reference: new sine frequencies / phases, unfreeze, sine time 0 now,
-#                                CLI move commands accepted from now (status ready). Errors: log + state "reference_error"
+#                                "seed": int, "p0": [x, y, z], "ready": bool} (all optional: parameters / current p0 /
+#                                true position / true). (Re)starts the reference: new sine frequencies / phases,
+#                                unfreeze, sine time 0 now. ready true: CLI move commands and the transmitter hand-over
+#                                accepted from now (status ready; false = scene still in the air start, e.g. lifting
+#                                off the anchor). Errors: log + state "reference_error"
 #       /drone/px4/state (pub)   std_msgs/String JSON at state_rate Hz sim
 #     parameters: config, flight_config, px4_dir (~/PX4-Autopilot), report_dir, seed (virtual sensor noise seed),
 #       hover_mode, hover_preset, hover_seed (defaults for the reference), prop_spin (true: props turn with the Isaac
-#       rule, like Isaac Sim with GUI; false: held still, like Isaac Sim headless), use_sim_time (forced true)
+#       rule, like Isaac Sim with GUI; false: held still, like Isaac Sim headless), use_sim_time (forced true),
+#       rc (true: real transmitter, drone_rc.DroneRc every exchange before PX4Commander.tick = Isaac --drone-rc on),
+#       rc_config (config/rc_input.yaml), rc_port (serial device, empty = rc_config port)
+#   Transmitter (rc true): rc_input.yaml px4_params are added to the PX4 start parameters; the scene must fly a static
+#     reference (hover sine + transmitter = two drivers, refused by the launch file as in Isaac). A serial error (Pico
+#     unplugged) switches the transmitter off for this run: taken back to Offboard hover + error log (Isaac: exception).
 #   Air start sequence of a scene node: spawn the drone on its anchor -> /drone/px4/restart -> /drone/px4/arm ->
 #     detach the anchor (gz /drone/detach) -> wait until settled -> /drone/px4/reference_cmd (or /drone/px4/target).
 #
 #   Changes from Isaac: air start on an anchor instead of a ground take-off (no take-off legs / waypoints / settle:
 #     scene node's job), the plugin's TCP link replaces the PhysX callback, reference driven by ROS topics instead of
-#     the scene script, geometric controller / RC / gps / flow dropped.
+#     the scene script, geometric controller / gps / flow dropped.
 # =============================================================
 import json
 import math
@@ -77,7 +84,9 @@ from rclpy.parameter import Parameter
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
+from ocean_sim2sim_drone import rc_input
 from ocean_sim2sim_drone.commander import PX4Commander, Reference
+from ocean_sim2sim_drone.drone_rc import DroneRc
 from ocean_sim2sim_drone.flight import ThrustModel, load_flight, prop_speeds, quat_wxyz_to_R
 
 IN = struct.Struct("<15d")
@@ -108,12 +117,18 @@ class PX4BridgeNode(Node):
         self.declare_parameter("hover_preset", "small")
         self.declare_parameter("hover_seed", 0)
         self.declare_parameter("prop_spin", True)
+        self.declare_parameter("rc", False)
+        self.declare_parameter("rc_config", os.path.join(share, "config", "rc_input.yaml"))
+        self.declare_parameter("rc_port", "")
         gp = lambda n: self.get_parameter(n).value  # noqa: E731
 
         with open(os.path.expanduser(gp("config")), encoding="utf-8") as f:
             self.cfg = cfg = yaml.safe_load(f)
         self.fl = load_flight(os.path.expanduser(gp("flight_config")))
         px4c, sensors, auto = px4_link.build_px4_config(cfg, self.fl)
+        self.rc_cfg = rc_input.load_config(os.path.expanduser(gp("rc_config"))) if gp("rc") else None
+        if self.rc_cfg is not None:
+            px4c["params"].update(self.rc_cfg["px4_params"])
         self.px4_params, self.auto_params = px4c["params"], auto
         sitl = {"px4_dir": os.path.expanduser(gp("px4_dir")), "autolaunch": bool(cfg["autolaunch"]),
                 "instance": int(cfg["instance"]), "sim_port": int(cfg["sim_port"]),
@@ -131,6 +146,16 @@ class PX4BridgeNode(Node):
         self.cmd = PX4Commander(int(cfg["offboard_port"]) + inst, np.zeros(3), cc["setpoint_hz"], cc["retry_sec"],
                                 command_port=int(cfg["command_port"]) + inst, disable_streams=cc["disable_streams"])
         self.cmd.hover_hook = self._on_cli
+        self.drone_rc, self.rc_error = None, None
+        if self.rc_cfg is not None:
+            port = gp("rc_port") or self.rc_cfg["port"]
+            try:
+                self.drone_rc = DroneRc(self.cmd, self.rc_cfg, lambda: 0.0 if self.t is None else self.t, port,
+                                        log=self.get_logger().info)
+            except OSError as e:
+                raise RuntimeError(f"transmitter serial device {port}: {e} (plugged in? dialout group? rc_port:=...)") from e
+            self.get_logger().info(f"transmitter: {port} ({gp('rc_config')}), PX4 start params + {self.rc_cfg['px4_params']}, "
+                                   f"at hand-over {self.rc_cfg['handover_params']}")
         self.presets = cfg["hover_presets"]
         self.ref = self._make_reference({}, np.zeros(3))
         self.ref_active, self.t_ref0 = False, 0.0
@@ -271,6 +296,7 @@ class PX4BridgeNode(Node):
             try:
                 if self.ref_active and self.cmd.target is not None and not self.cmd.external:
                     self.cmd.goto(self.ref(t - self.t_ref0)[0])
+                self._rc_update()
                 self.cmd.tick(t)
             except Exception as e:  # noqa: BLE001
                 self._fail(f"PX4 commander error at sim {t:.3f} s: {e}")
@@ -279,6 +305,24 @@ class PX4BridgeNode(Node):
                 self.pub_state.publish(String(data=json.dumps(self.state())))
             self.wall_last_exchange = time.monotonic()
         return reply
+
+    def _rc_update(self):
+        if self.drone_rc is None:
+            return
+        try:
+            self.drone_rc.update()
+        except RuntimeError as e:                          # serial read error (unplugged): transmitter off for this run
+            if "serial" not in str(e):
+                raise
+            self.rc_error = str(e)
+            self.get_logger().error(f"{e} -> transmitter off until the bridge restarts, drone back to Offboard hover")
+            if self.cmd.want_manual:
+                self.cmd.takeback()
+            try:
+                self.drone_rc.close()
+            except OSError:
+                pass
+            self.drone_rc = None
 
     def _idle_tick(self):
         with self.lock:
@@ -322,7 +366,9 @@ class PX4BridgeNode(Node):
                     "reference": {**self.ref.params, "active": self.ref_active,
                                   "t0": round(self.t_ref0, 4) if self.ref_active else None,
                                   "freeze": self.hover_freeze_info},
-                    "reference_error": self.reference_error, "run_dir": self.bridge.current_run_dir,
+                    "reference_error": self.reference_error,
+                    "rc": None if self.rc_cfg is None else {**(self.drone_rc.status() if self.drone_rc else {}),
+                                                            "error": self.rc_error}, "run_dir": self.bridge.current_run_dir,
                     "statustext": [m for _, _, m in self.cmd.messages[-3:]]}
 
     # -- services --
@@ -458,7 +504,7 @@ class PX4BridgeNode(Node):
             self.t_ref0 = self.t if self.t is not None else 0.0
             self.ref_active = True
             self.hover_freeze_info = None
-            self.cmd.cli_ready = True           # CLI move commands accepted from now (Isaac: after take-off)
+            self.cmd.cli_ready = bool(req.get("ready", True))   # CLI / transmitter accepted from now (Isaac: after take-off)
             if self.cmd.target is not None and not self.cmd.external:
                 self.cmd.goto(self.ref(0.0)[0])
             self.reference_error = None
@@ -469,9 +515,9 @@ class PX4BridgeNode(Node):
             req = json.loads(msg.data) if msg.data.strip() else {}
             if not isinstance(req, dict):
                 raise ValueError("JSON object expected")
-            unknown = set(req) - {"mode", "preset", "seed", "p0"}
+            unknown = set(req) - {"mode", "preset", "seed", "p0", "ready"}
             if unknown:
-                raise ValueError(f"unknown keys {sorted(unknown)} (mode, preset, seed, p0)")
+                raise ValueError(f"unknown keys {sorted(unknown)} (mode, preset, seed, p0, ready)")
             self._activate_reference(req)
         except (ValueError, KeyError) as e:
             with self.lock:
@@ -529,6 +575,8 @@ class PX4BridgeNode(Node):
         with self.lock:
             self.bridge.stop()
             self.cmd.close()
+            if self.drone_rc is not None:
+                self.drone_rc.close()
 
 
 def main():

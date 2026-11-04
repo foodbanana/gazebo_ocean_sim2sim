@@ -38,6 +38,11 @@ def launch(context, *args, **kwargs):
     def arg(name):
         return LaunchConfiguration(name).perform(context)
 
+    if arg('drone_motion') not in ('static', 'hover', 'rc'):
+        raise RuntimeError(f"drone_motion must be static, hover or rc: {arg('drone_motion')}")
+    if arg('drone_motion') == 'rc' and arg('drone_mode') != 'px4':
+        raise RuntimeError('drone_motion:=rc needs drone_mode:=px4 (the transmitter flies the PX4 drone)')
+
     # 1. one URDF for everything
     xacro_cmd = ['xacro', arg('xacro_file')] + shlex.split(arg('xacro_args'))
     urdf = subprocess.run(xacro_cmd, check=True, capture_output=True, text=True).stdout
@@ -138,7 +143,9 @@ def launch(context, *args, **kwargs):
             package='ocean_sim2sim_drone',
             executable='px4_bridge_node.py',
             output='screen',
-            parameters=[{'px4_dir': arg('px4_dir'), 'prop_spin': arg('prop_spin').lower() in ('true', '1', 'yes')}]))
+            parameters=[{'px4_dir': arg('px4_dir'), 'prop_spin': arg('prop_spin').lower() in ('true', '1', 'yes'),
+                         # drone_motion rc: the real transmitter flies the drone after the air start (docs/teleop.md)
+                         'rc': arg('drone_motion') == 'rc', 'rc_port': arg('rc_port')}]))
     return nodes
 
 
@@ -160,7 +167,9 @@ def generate_launch_description():
         ('wave_gain', '', 'VRX wavefield gain (empty = world file value). docs/waves.md'),
         ('wave_period', '', 'VRX wavefield peak period [s] (empty = world file value)'),
         ('drone_mode', 'px4', 'px4 = PX4 SITL flies the drone (venv + PX4-Autopilot needed); fixed = held on a world anchor'),
-        ('drone_motion', 'hover', 'px4: static or hover (sine around the hover point, Isaac Sim collection setting)'),
+        ('drone_motion', 'hover', 'px4: static, hover (sine around the hover point, Isaac Sim collection setting) or rc '
+                                  '(real transmitter via the Pico serial device after the air start, docs/teleop.md)'),
+        ('rc_port', '', 'drone_motion rc: serial device of the Pico (empty = ocean_sim2sim_drone config/rc_input.yaml port)'),
         ('hover_preset', 'mid', 'px4 hover sine preset: small | mid | big (Isaac Sim drone_iris.yaml)'),
         ('prop_spin', 'true', 'px4: props turn for show (Isaac Sim rule: 100 rad/s at >= 0.1 N thrust, 5 rad/s below, '
                               '0 off; Isaac Sim default on with GUI, off headless). false = props held still'),

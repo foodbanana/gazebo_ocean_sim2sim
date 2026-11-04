@@ -166,6 +166,8 @@ class SceneNode(Node):
         self.px4_release_timeout = float(p('px4_release_timeout', 20.0).value)
         self.settle_time = float(p('settle_time', 5.0).value)
         self.drone_motion = str(p('drone_motion', 'static').value)
+        if self.drone_motion not in ('static', 'hover', 'rc'):
+            raise RuntimeError(f'drone_motion must be static, hover or rc (transmitter, static reference): {self.drone_motion}')
         self.hover_preset = str(p('hover_preset', 'mid').value)
         self.px4_state = None
         seed = int(p('seed', -1).value)
@@ -301,8 +303,8 @@ class SceneNode(Node):
             raise RuntimeError(f'/drone/px4/{name} failed: {res.message[:300]}')
         return json.loads(res.message) if res.message.startswith('{') else res.message
 
-    def _px4_reference(self, mode, p0, preset=None, seed=None):
-        cmd = {'mode': mode, 'p0': [float(v) for v in p0]}
+    def _px4_reference(self, mode, p0, preset=None, seed=None, ready=True):
+        cmd = {'mode': mode, 'p0': [float(v) for v in p0], 'ready': bool(ready)}
         if preset is not None:
             cmd['preset'] = preset
         if seed is not None:
@@ -318,14 +320,14 @@ class SceneNode(Node):
         self._px4_call('arm')
         phases['px4_arm'], t = self.now() - t, self.now()
         p = list(pos)
-        self._px4_reference('static', [p[0], p[1], p[2] + self.px4_lift])
+        self._px4_reference('static', [p[0], p[1], p[2] + self.px4_lift], ready=False)   # no CLI / transmitter yet
         if not self.wait_sim(self.px4_release_timeout,
                              until=lambda: (self.px4_state or {}).get('thrust_sum', 0.0) >= self.px4_release_thrust):
             raise RuntimeError(f'PX4 thrust did not reach {self.px4_release_thrust:.2f} N in {self.px4_release_timeout:g} s '
                                f'(state {self.px4_state and self.px4_state.get("thrust_sum")})')
         thrust = self.px4_state['thrust_sum']
         self.pub_detach.publish(Empty())
-        self._px4_reference('static', p)
+        self._px4_reference('static', p, ready=False)
         if not self.wait_sim(2.0, until=lambda: self.attached is False):
             raise RuntimeError('drone did not report "detached" after the release')
         phases['px4_release'], t = self.now() - t, self.now()

@@ -20,6 +20,8 @@ install(PROGRAMS
   scripts/drone_link_test.py
   scripts/px4_bridge_node.py
   scripts/drone_cmd.py
+  scripts/rc_watch.py
+  scripts/check_rc.py
   DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 install(FILES ${PROJECT_NAME}/LICENSE.PegasusSimulator DESTINATION share/${PROJECT_NAME})

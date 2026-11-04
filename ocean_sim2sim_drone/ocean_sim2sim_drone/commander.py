@@ -25,9 +25,12 @@
 #     (amplitude sum = preset amplitude). freeze(t): stop at the target of that time. reseed(seed, p0): new frequencies
 #     and phases, unfreeze.
 #
-#   Changes from the Isaac Sim files: RC handover (MANUAL_CONTROL, set_sticks / handover / takeback) and runtime
-#     PARAM_SET (set_params, only used by the RC path) removed - with no sticks set they never sent anything, so the
-#     MAVLink traffic is unchanged; trajectory mode removed (not implemented in Isaac either); messages and comments in
+#   RC handover (Isaac Sim drone_cmd.py, docs/drone_teleop.md): set_sticks() then handover() -> PX4 manual mode (POSCTL),
+#     sticks go out as MANUAL_CONTROL on the same link (position target / Offboard re-request stop). takeback() = Offboard
+#     hold at the current estimate (signal lost). Once MANUAL_CONTROL has started it is never stopped (centre values while
+#     not handed over): PX4 would go to the manual-control-loss failsafe. set_params(dict): runtime PX4 float parameters
+#     (PARAM_SET, re-sent until PARAM_VALUE confirms, params_confirmed()).
+#   Changes from the Isaac Sim files: trajectory mode removed (not implemented in Isaac either); messages and comments in
 #     English; a RuntimeError inside a CLI command (hold before any estimate) is answered as an error instead of
 #     propagating and stopping the bridge. Equations, rates, retry logic, message order and the CLI JSON protocol are identical.
 # =============================================================
@@ -121,8 +124,12 @@ class PX4Commander:
         self.sys = int(target_system)
         self.target, self.yaw = None, 0.0
         self.want_offboard, self.want_armed = False, False
+        self.want_manual = False    # handed over to the transmitter (PX4 POSCTL + MANUAL_CONTROL)
+        self.sticks = None          # (pitch, roll, throttle, yaw) -1 ~ 1, centre 0. None = MANUAL_CONTROL never sent
         self.armed, self.mode, self.landed = False, None, None
         self.estimate_enu, self.estimate_yaw = None, None
+        self.param_values = {}      # values received as PARAM_VALUE {name: float}
+        self.param_wanted = {}      # values requested with set_params (re-sent until confirmed)
         self.messages = []          # (t, severity, text) PX4 STATUSTEXT
         self.acks = []              # (t, command, result)
         self.t, self._t_sp, self._t_req = 0.0, -1e9, -1e9
@@ -134,7 +141,9 @@ class PX4Commander:
         self.armed, self.mode, self.landed = False, None, None
         self.estimate_enu, self.estimate_yaw = None, None
         self.target, self.want_offboard, self.want_armed = None, False, False
+        self.want_manual, self.sticks = False, None
         self.external = False
+        self.param_values, self.param_wanted = {}, {}
         self._t_sp, self._t_req = -1e9, -1e9
 
     def close(self):
@@ -147,7 +156,7 @@ class PX4Commander:
         f = lambda a: None if a is None else [round(float(x), 4) for x in a]  # noqa: E731
         return {"t": round(self.t, 3), "connected": self.connected, "mode": self.mode, "armed": self.armed, "landed": self.landed,
                 "estimate": f(self.estimate_enu), "target": f(self.target), "yaw_deg": round(math.degrees(self.yaw), 2),
-                "external": self.external, "ready": self.cli_ready, "manual": False}
+                "external": self.external, "ready": self.cli_ready, "manual": self.want_manual}
 
     def _handle_cli(self, req):
         cmd = req.get("cmd")
@@ -211,6 +220,12 @@ class PX4Commander:
                 self.estimate_yaw = math.pi / 2 - m.yaw
             elif k == "EXTENDED_SYS_STATE":
                 self.landed = {0: "undefined", 1: "on_ground", 2: "in_air", 3: "takeoff", 4: "landing"}.get(m.landed_state)
+            elif k == "PARAM_VALUE":
+                name = m.param_id.decode() if isinstance(m.param_id, bytes) else str(m.param_id)
+                name = name.rstrip("\x00")
+                if name in self.param_wanted and m.param_type != M.MAV_PARAM_TYPE_REAL32:
+                    raise RuntimeError(f"PX4 parameter {name} is not a float (type {m.param_type}): set_params is float only")
+                self.param_values[name] = float(m.param_value)
             elif k == "STATUSTEXT":
                 self.messages.append((round(self.t, 3), int(m.severity), m.text))
             elif k == "COMMAND_ACK":
@@ -228,6 +243,21 @@ class PX4Commander:
         self.conn.mav.set_position_target_local_ned_send(int(self.t * 1000), self.sys, 1, M.MAV_FRAME_LOCAL_NED, POS_YAW_MASK,
                                                          n[0], n[1], n[2], 0, 0, 0, 0, 0, 0, math.pi / 2 - self.yaw, 0)
 
+    def _send_manual(self):
+        # PX4 MANUAL_CONTROL: x = pitch (forward +), y = roll (right +), r = yaw (right +) -1000 ~ 1000, z = throttle 0 ~ 1000 (centre 500)
+        pitch, roll, thr, yaw = self.sticks if self.want_manual else (0.0, 0.0, 0.0, 0.0)
+        self.conn.mav.manual_control_send(self.sys, int(round(pitch * 1000)), int(round(roll * 1000)),
+                                          int(round((thr + 1.0) * 500)), int(round(yaw * 1000)), 0)
+
+    def _send_params(self):
+        for name, v in self.param_wanted.items():
+            if not self._param_ok(name):
+                self.conn.mav.param_set_send(self.sys, 1, name.encode(), float(v), M.MAV_PARAM_TYPE_REAL32)
+
+    def _param_ok(self, name):
+        got = self.param_values.get(name)
+        return got is not None and abs(got - float(self.param_wanted[name])) <= 1e-4 * max(1.0, abs(float(self.param_wanted[name])))
+
     def _send_gcs_heartbeat(self):
         self.conn.mav.heartbeat_send(M.MAV_TYPE_GCS, M.MAV_AUTOPILOT_INVALID, 0, 0, 0)
 
@@ -236,6 +266,20 @@ class PX4Commander:
         """Offboard position target + arm. tick() re-requests until done."""
         self.goto(target_enu, yaw_enu)
         self.want_offboard, self.want_armed = True, True
+
+    def set_params(self, params):
+        """Runtime PX4 float parameters. tick() re-sends until PARAM_VALUE returns the same value (params_confirmed)."""
+        for name, v in params.items():
+            if not math.isfinite(float(v)):
+                raise ValueError(f"PX4 parameter value is not finite: {name}={v}")
+            self.param_wanted[str(name)] = float(v)
+            self.param_values.pop(str(name), None)
+        if self.connected:
+            self._send_params()
+
+    def params_confirmed(self, names=None):
+        names = self.param_wanted if names is None else names
+        return all(self._param_ok(n) for n in names)
 
     def goto(self, target_enu, yaw_enu=None):
         self.target = np.asarray(target_enu, dtype=float)
@@ -252,9 +296,35 @@ class PX4Commander:
         self.target = None
         self._command(M.MAV_CMD_DO_SET_MODE, M.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, 4, 6)
 
+    def set_sticks(self, pitch, roll, throttle, yaw):
+        """Transmitter sticks (-1 ~ 1, centre 0. pitch forward +, roll right +, throttle up +, yaw right +). Out of range = error."""
+        v = (float(pitch), float(roll), float(throttle), float(yaw))
+        if not all(math.isfinite(x) and -1.0 <= x <= 1.0 for x in v):
+            raise ValueError(f"stick values outside -1 ~ 1: {v}")
+        self.sticks = v
+
+    def handover(self):
+        """Hand over to the transmitter: request PX4 manual mode (POSCTL); the position target stops once the mode changed.
+        Only while flying Offboard."""
+        if self.sticks is None:
+            raise RuntimeError("no stick values (set_sticks first)")
+        if not (self.connected and self.armed and self.mode == "OFFBOARD"):
+            raise RuntimeError(f"not flying Offboard: mode {self.mode}, armed {self.armed}")
+        self.want_manual, self.want_offboard = True, False
+        self.external = True
+        self._t_req = -1e9
+
+    def takeback(self):
+        """Take back from the transmitter: Offboard with the current estimate as target (signal lost, before a reset)."""
+        self.want_manual = False
+        self.hold()
+        self.want_offboard = True
+        self._t_req = -1e9
+
     def kill(self):
         """Forced stop in the air (force disarm). Motors stop at once."""
         self.want_offboard, self.want_armed = False, False
+        self.want_manual = False
         self.target = None
         self._command(M.MAV_CMD_COMPONENT_ARM_DISARM, 0, KILL_MAGIC)
 
@@ -274,12 +344,20 @@ class PX4Commander:
                     res = {"ok": False, "error": str(e), **self.status()}
                 self.cli_log.append((round(self.t, 3), req, res.get("ok"), res.get("error")))
                 self.server.reply(addr, res)
+        if self.sticks is not None and self.connected:
+            self._send_manual()
+        if self.want_manual and self.mode == "POSCTL":
+            self.target = None                      # handed over -> stop the position target (sent until then so Offboard holds)
         if self.target is not None and self.t - self._t_sp >= self.sp_period:
             self._send_setpoint()
             self._t_sp = self.t
         if self.t - self._t_req >= self.retry:
             self._send_gcs_heartbeat()
-            if self.connected and self.want_offboard and self.target is not None and self.mode != "OFFBOARD":
+            if self.connected and self.param_wanted and not self.params_confirmed():
+                self._send_params()
+            if self.connected and self.want_manual and self.armed and self.mode != "POSCTL":
+                self._command(M.MAV_CMD_DO_SET_MODE, M.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, 3, 0)
+            elif self.connected and self.want_offboard and self.target is not None and self.mode != "OFFBOARD":
                 self._command(M.MAV_CMD_DO_SET_MODE, M.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, 6, 0)
             elif self.connected and self.want_armed and self.mode == "OFFBOARD" and not self.armed:
                 self._command(M.MAV_CMD_COMPONENT_ARM_DISARM, 1)
