@@ -22,7 +22,7 @@ ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py wave_gain:=0.18          # 
 
 ## 2. 세기별 로봇 베이스 움직임 (측정, 2026-11-03)
 
-`/base/odom` (로봇 마운트) 과 `/base/imu` (VRX IMU 위치) 를 60 s 기록. drone_mode fixed (보트 움직임만 봄).
+`/base/odom` (로봇 마운트) 과 `/base/imu` (당시 VRX IMU 위치 (0.3, −0.2, 1.3), 지금은 (−0.15, 0, 1.3)) 를 60 s 기록. drone_mode fixed (보트 움직임만 봄).
 
 | gain | 상하 표준편차 | 상하 최대-최소 | 주기 | 앞뒤 최대-최소 | 좌우 | roll 최대-최소 | pitch 최대-최소 | 가속도 (중력 뺀) RMS | 자이로 RMS |
 |---|---|---|---|---|---|---|---|---|---|
