@@ -13,6 +13,7 @@ install(PROGRAMS
   scripts/grasp_test.py
   scripts/grasp_demo.py
   scripts/regression.py
+  scripts/spawn_controllers.py
   DESTINATION lib/${PROJECT_NAME})
 
 ament_package()

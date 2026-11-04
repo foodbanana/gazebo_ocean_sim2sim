@@ -79,9 +79,11 @@ ros2 run ocean_sim2sim_teleop plot_bag_imu.py ~/vrx_ws/src/gazebo_ocean_sim2sim/
 
 순서: **B** (리셋) → **Y** (텔레옵) → 잠깐 자세 유지 → **A** (녹화) → 잡기 → **X** (모터 정지) → **A** (녹화 끝) → 다음은 **B** 부터.
 리셋하면 텔레옵은 스스로 멈춘다 (다시 Y).
-sim 을 켠 직후에는 팔 컨트롤러가 늦게 켜질 수 있다 (spawner 의 첫 응답이 사라지면 60 s 기다림, 터미널의 `Configured and activated
-gripper_controller` 줄). 그 전의 B / `r` 은 거절되고 (`arm controllers not up yet ... nothing changed`), 드론은 그대로 있다
-(2026-11-04 전에는 리셋이 드론을 먼저 지운 뒤 실패해 드론이 사라졌다). 녹화 중에는 새 ROS 노드 (`ros2 topic echo`, rqt) 를 띄우지 않는다.
+팔 컨트롤러가 켜지기 전의 B / `r` 은 거절되고 (`arm controllers not up yet ... nothing changed`), 드론은 그대로 있다
+(2026-11-04 전에는 리셋이 드론을 먼저 지운 뒤 실패해 드론이 사라졌다). 컨트롤러는 sim 을 켜고 약 6 ~ 8 s 뒤 켜진다
+(`ocean_sim2sim_bringup/scripts/spawn_controllers.py`: 전에는 기본 spawner 가 controller_manager 의 첫 응답을 잃으면 60 s 기다렸다,
+234 번 중 27 번 (12 %). 지금은 목록 조회만 3 s 마다 다시 묻고, 로드·설정·활성화는 한 번만 보낸 뒤 목록으로 확인 → 25 번 시험에서
+응답 잃음 5 번 모두 3.1 s 안에 회복, `regression.py --quick` 15/15 PASS). 녹화 중에는 새 ROS 노드 (`ros2 topic echo`, rqt) 를 띄우지 않는다.
 
 ### 조종기 (드론)
 

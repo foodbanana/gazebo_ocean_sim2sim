@@ -72,7 +72,7 @@ def is_sim_process(argv):
         return True
     if a0.endswith('/ros_gz_bridge/parameter_bridge') or a0.endswith('/robot_state_publisher') or a0.endswith('/bin/px4'):
         return True
-    if base.startswith('python3') and re.search(r'/(px4_bridge_node(\.py)?|interface_node|scene_node|spawner)$', a1):
+    if base.startswith('python3') and re.search(r'/(px4_bridge_node(\.py)?|interface_node|scene_node|spawner|spawn_controllers\.py)$', a1):
         return True
     return False
 

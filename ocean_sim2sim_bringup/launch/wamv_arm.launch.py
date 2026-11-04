@@ -83,15 +83,14 @@ def launch(context, *args, **kwargs):
         remappings=[('joint_states', '/joint_state_broadcaster/joint_states')])
 
     # 4. controllers (spawner waits for the controller manager inside Gazebo)
+    #    Own spawner (scripts/spawn_controllers.py): the stock spawner waited 60 s when the first list_controllers
+    #    answer was lost (about 12 % of start-ups); a shorter stock timeout re-sent load_controller -> "already loaded"
     spawner = Node(
-        package='controller_manager',
-        executable='spawner',
+        package='ocean_sim2sim_bringup',
+        executable='spawn_controllers.py',
         output='screen',
         arguments=['joint_state_broadcaster', 'arm_state_broadcaster', 'arm_controller', 'gripper_controller',
-                   '--controller-manager-timeout', '120',
-                   # default 10 s: at a busy start-up the load call answered later, the spawner retried and failed
-                   # with "already loaded" (controllers stayed inactive)
-                   '--service-call-timeout', '60'])
+                   '--wait', '120', '--list-timeout', '3', '--change-timeout', '60'])
 
     # 5. Isaac Sim / real-robot topics
     interface = Node(
