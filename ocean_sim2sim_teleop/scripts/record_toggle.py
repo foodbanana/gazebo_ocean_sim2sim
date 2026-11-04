@@ -17,7 +17,8 @@
 #     drone_kill (X) : = k
 #     Requests that arrive during a reset / stop / kill are dropped.
 #   Topics: config/recorder.yaml (state topics need a publisher before recording; image topics RELIABLE).
-#     /base/imu and /base/odom are recorded (boat motion). Plot the IMU of a bag: plot_bag_imu.py <bag>
+#     /base/imu and /base/odom are recorded (boat motion). Every saved bag also gets base_imu.png + base_imu.csv /
+#     base_odom.csv (plot_bag_imu.py in the background; --no-imu-plot to skip). Open a window: plot_bag_imu.py <bag> --show
 #   Bags: --bag-dir (default: ocean_gazebo_bags/ at the top of this repository, git-ignored, like bags/ in the Isaac
 #     repo; found from the workspace: <ws>/install -> <ws>/src/**/ocean_sim2sim_teleop/package.xml -> its parent).
 #     Not deleted automatically (about 1.5 GB per 30 s with the wrist camera in Isaac; check df -h).
@@ -207,8 +208,9 @@ def write_qos_overrides(link):
 
 
 class BagRecorder:
-    def __init__(self, task_name, link, bag_dir):
+    def __init__(self, task_name, link, bag_dir, imu_plot=True):
         self.task_name, self.link, self.bag_dir = task_name, link, bag_dir
+        self.imu_plot = imu_plot
         self.discard_dir = os.path.join(bag_dir, '_discarded')
         self.qos_path = None
         self.proc = None
@@ -288,6 +290,8 @@ class BagRecorder:
             self.episode_count += 1
             self.last_saved = self.out_dir
             self.last_elapsed = elapsed
+            if self.imu_plot:
+                self._plot_imu(self.out_dir)
             say(f"[SAVED] {self.out_dir}  ({elapsed:.1f} s)  - episode {self.episode_count} of this session")
         else:
             say(f"[WARN] no metadata.yaml -> the bag may not have finished properly: {self.out_dir}")
@@ -296,6 +300,19 @@ class BagRecorder:
         self.t_start = None
         self.info = None
         say(IDLE_MSG)
+
+    def _plot_imu(self, bag):
+        """base_imu.png + base_imu.csv / base_odom.csv in the bag folder (plot_bag_imu.py next to this script), in the
+        background so the next episode is not delayed. Output of the plot in <bag>/base_imu_plot.log."""
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'plot_bag_imu.py')
+        try:
+            log = open(os.path.join(bag, 'base_imu_plot.log'), 'w')
+            subprocess.Popen([sys.executable, script, bag, '--csv'], stdin=subprocess.DEVNULL, stdout=log,
+                             stderr=subprocess.STDOUT, start_new_session=True)
+            log.close()
+            say(f"[IMU] plot in the background -> {os.path.join(bag, 'base_imu.png')}")
+        except OSError as e:
+            say(f"[WARN] IMU plot not started: {e}")
 
     def discard_last(self):
         os.makedirs(self.discard_dir, exist_ok=True)
@@ -421,6 +438,8 @@ def main():
     ap.add_argument('task_name', nargs='?', default='', help='appended to the bag name (same settings = same task name)')
     ap.add_argument('--bag-dir', default=None, help='where the bags go (default: <repository>/ocean_gazebo_bags)')
     ap.add_argument('--config', default=None, help='topics (default: this package config/recorder.yaml)')
+    ap.add_argument('--no-imu-plot', action='store_true',
+                    help='do not write base_imu.png / CSV into each saved bag (plot_bag_imu.py, in the background)')
     args = ap.parse_args()
     task_name = args.task_name
     bag_dir = os.path.abspath(os.path.expanduser(args.bag_dir)) if args.bag_dir else default_bag_dir()
@@ -434,7 +453,7 @@ def main():
 
     os.makedirs(bag_dir, exist_ok=True)
     link = RosLink(load_config(args.config or default_config()))
-    recorder = BagRecorder(task_name, link, bag_dir)
+    recorder = BagRecorder(task_name, link, bag_dir, imu_plot=not args.no_imu_plot)
     print_help(task_name, link, bag_dir)
 
     # terminal closed (SIGHUP) / kill (SIGTERM): stop the bag safely too

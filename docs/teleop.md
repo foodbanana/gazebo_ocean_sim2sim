@@ -116,6 +116,7 @@ Isaac `drone_scene.py` `GUI_AUX_VIEWS` 와 같은 위치·화각 (`ocean_sim2sim
 
 - 드론 (위치, 조종기 입력) 은 녹화하지 않는다 (Isaac 결정 2026-10-08). `episode.json` 에 리셋 응답 (seed, 드론 기준 위치, 공중 시작 단계 시간) 과 모터 정지 시각
 - 녹화 시작 전에 상태 토픽마다 발행자가 있는지 확인한다 (없으면 녹화하지 않음)
+- 저장할 때마다 그 bag 폴더에 `base_imu.png` (그래프), `base_imu.csv`, `base_odom.csv` 를 자동으로 만든다 (뒤에서, 창 없이. `--no-imu-plot` 로 끔). 창으로 보려면 `plot_bag_imu.py <bag> --show`
 - bag 은 레포 최상위 `ocean_gazebo_bags/` 에 쌓인다 (`.gitignore`, Isaac 레포의 `bags/` 와 같음). 자동으로 지우지 않는다 (`df -h` 확인)
 
 ## 5. Isaac 과 다른 점
