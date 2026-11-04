@@ -1,0 +1,96 @@
+# Regression suite (scripts/regression.py, docs/regression.md): stages, launch arguments, expected values and tolerances.
+#
+# Every check has a `source` (where the expected value was measured / documented). Kinds:
+#   min / max : numeric range (inclusive), PASS / FAIL
+#   equals    : exact value (bools), PASS / FAIL
+#   info: true: shown as INFO (known-variable item), never fails the suite
+# Expected values = current settings: DART + Bullet collision detector, original finger meshes, finger friction 0.6,
+# gripper r1 effort 2.28 Nm (docs/grasp.md 3, "Gazebo 원본 메시" column).
+
+launch:
+  package: ocean_sim2sim_bringup
+  file: wamv_arm.launch.py
+  common_args: {headless: 'True'}
+  ready_timeout_s: 300          # wall: 4 active controllers + scene ready log line
+  controllers_active: 4         # joint_state_broadcaster, arm_state_broadcaster, arm_controller, gripper_controller
+  shutdown_timeout_s: 30
+
+stages:
+  grip:
+    launch_args: {world: empty_ocean_calm, drone_mode: fixed}
+    ready_log: 'drone at world'
+    world: empty_ocean_calm
+    rtf_idle_s: 10              # wall seconds of /clock sampling before the tests
+    grasp_tests: [E, G3, G3, G1, G4, H]
+    grasp_tests_quick: [E, G3]
+    mass: 0.8                   # G3 / H box mass [kg]
+    timeout_s: 1500
+  pstop:
+    launch_args: {world: empty_ocean_calm, drone_mode: fixed}
+    ready_log: 'drone at world'
+    ramp_joint: shoulder_lift_joint
+    ramp_rate: 0.3              # rad/s (sim)
+    ramp_max: 2.0               # rad
+    jump_joint: wrist_1_joint
+    jump: 1.0                   # rad
+    command_hz: 60
+    pose_tol: 0.02              # rad, arm at init_pose after reset (= scene reset_arrive_tol)
+    timeout_s: 600
+  demo:
+    launch_args: {world: empty_ocean_calm, drone_mode: px4, drone_motion: static}
+    ready_log: 'PX4 drone flying'
+    rtf_hover_s: 15             # wall seconds of /clock sampling with the drone hovering, before the demo
+    cases: [all]
+    cases_quick: [success]
+    timeout_s: 3000
+  waves:
+    launch_args: {world: empty_ocean, drone_mode: px4, drone_motion: hover}   # world file gain 0.3 (docs/waves.md 1)
+    ready_log: 'PX4 drone flying'
+    rtf_hover_s: 30
+    timeout_s: 600
+
+checks:
+  # ---- grip (calm, fixed drone)
+  grip.rtf_idle: {min: 0.9, expected: '1.00', source: 'docs/grasp.md 3 (RTF row)'}
+  grip.E_r1_rad: {min: 1.124, max: 1.144, expected: '1.134 rad', source: 'docs/grasp.md 3 (E 빈손 닫기)'}
+  # G3 slip force: the documented 9.3~9.5 N is suspect. 2026-11-04 regression: 27~32 N with a single helper bridge;
+  # with one extra wrench bridge the reported pull halves (ApplyLinkWrench adds every forwarded increment), and stale
+  # grasp_test bridges were left running before commit 809056e -> the old runs likely applied ~12x the reported pull.
+  # Range kept at the documented value until docs/grasp.md is re-measured (decision pending).
+  grip.G3_slip_force_N: {min: 8.5, max: 10.5, expected: '9.3~9.5 N', source: 'docs/grasp.md 3 (G3 미끄럼 힘), docs/drone_px4.md 8'}
+  grip.G3_normal_force_N: {min: 23.0, max: 30.0, expected: '26.6 N per finger (r2 / l2)', source: 'docs/grasp.md 3 (손가락당 수직력)'}
+  grip.G1_slip_mm: {max: 0.5, expected: '0.07 mm (Isaac < 1 mm)', source: 'docs/grasp.md 3 (G1)'}
+  grip.G1_box_jitter_mm: {max: 0.3, expected: '0.10 mm', source: 'docs/grasp.md 3 (G1)'}
+  grip.G4_slip_mm: {max: 0.5, expected: '0.14 mm', source: 'docs/grasp.md 3 (G4)'}
+  grip.G4_joint_jitter_deg: {max: 0.01, expected: '0.0001 deg (Isaac < 0.01)', source: 'docs/grasp.md 3 (G4)'}
+  grip.G4_box_jitter_mm: {info: true, expected: '0.22 mm (Isaac < 0.1)', source: 'docs/grasp.md 3 (G4)'}
+  grip.H_slip_mm: {max: 0.6, expected: '0.19 mm', source: 'docs/grasp.md 3 (H 0.8 kg)'}
+  grip.H_box_jitter_mm: {info: true, expected: '0.36 mm', source: 'docs/grasp.md 3 (H 0.8 kg)'}
+
+  # ---- protective stop (calm, fixed drone)
+  pstop.reset_initial: {equals: true, expected: 'reset ok', source: 'docs/interface.md 8'}
+  pstop.crash_stopped: {equals: true, expected: 'stops before +2 rad', source: 'docs/interface.md 8 (보호 정지 확인)'}
+  pstop.crash_by_force: {equals: true, expected: 'reason: force > 150 N', source: 'docs/interface.md 8 (손목 링크를 갑판으로: 590 N)'}
+  pstop.crash_force_N: {info: true, expected: '491~590 N', source: 'docs/interface.md 8 (보호 정지 확인)'}
+  pstop.crash_reset: {equals: true, expected: 'reset ok (escape pose)', source: 'docs/interface.md 8 (리셋 복구)'}
+  pstop.crash_reset_pose: {equals: true, expected: 'arm at init_pose (< 0.02 rad)', source: 'docs/interface.md 8, scene reset_arrive_tol'}
+  pstop.crash_cleared: {equals: true, expected: '/protective_stop false after reset', source: 'docs/interface.md 8'}
+  pstop.jump_stopped: {equals: true, expected: 'stops (tracking error > 5 deg)', source: 'docs/interface.md 8 (손목 관절 1 rad 점프: 6.4 deg)'}
+  pstop.jump_reason: {info: true, expected: 'error 6.4 deg > 5', source: 'docs/interface.md 8'}
+  pstop.jump_reset: {equals: true, expected: 'reset ok, arm at init_pose', source: 'docs/interface.md 8'}
+
+  # ---- PX4 grasp demo (calm, drone_motion static)
+  demo.rtf_static_hover: {min: 0.9, expected: '1.00', source: 'docs/drone_px4.md 3, 7 (호버 RTF 1.00)'}
+  demo.success: {equals: true, expected: 'held', source: 'docs/drone_px4.md 4, docs/grasp_demo.md 5'}
+  demo.offset_y: {equals: true, expected: 'held', source: 'docs/drone_px4.md 4'}
+  demo.offset_x: {info: true, expected: 'held (slips at the 10 deg rotation limit sometimes)', source: 'docs/drone_px4.md 7, 8'}
+  demo.empty: {equals: true, expected: 'failed / no_grasp_empty', source: 'docs/drone_px4.md 4'}
+  demo.miss: {info: true, expected: 'Isaac: no_grasp_empty; Gazebo grasps (known gap)', source: 'docs/drone_px4.md 4'}
+  demo.success_rot_deg: {info: true, expected: '0.2~7 deg (Isaac 0.9)', source: 'docs/drone_px4.md 4, 8'}
+  demo.protective_stop_never: {equals: true, expected: 'never trips', source: 'docs/interface.md 8 (정상 동작에서 안 걸림)'}
+  demo.rtf_holding: {info: true, expected: '0.25~0.5 (known)', source: 'docs/drone_px4.md 7, 8 (잡고 있는 동안 RTF)'}
+  demo.rtf_not_holding: {info: true, expected: '~1.0', source: 'docs/drone_px4.md 7'}
+
+  # ---- waves (empty_ocean, gain 0.3, PX4 hover)
+  waves.rtf_hover: {min: 0.9, expected: '1.00', source: 'docs/drone_px4.md 7 (호버 RTF 1.00), docs/grasp_demo.md 6 (RTF 1.00)'}
+  waves.protective_stop_never: {equals: true, expected: 'never trips (arm idle)', source: 'docs/interface.md 8'}

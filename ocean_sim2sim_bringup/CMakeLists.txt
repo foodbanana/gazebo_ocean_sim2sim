@@ -12,6 +12,7 @@ install(PROGRAMS
   scripts/drive_test.py
   scripts/grasp_test.py
   scripts/grasp_demo.py
+  scripts/regression.py
   DESTINATION lib/${PROJECT_NAME})
 
 ament_package()
