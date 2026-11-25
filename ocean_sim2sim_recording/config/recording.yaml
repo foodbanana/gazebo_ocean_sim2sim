@@ -1,0 +1,52 @@
+# =============================================================
+# recording.yaml - boat motion recordings for the ship motion predictor (docs/recording.md)
+#
+#   Spec: moving_base_prediction docs/gazebo_ocean_recording/01_Recording_Spec.md, stage 1 = A, C, E1 E2 E3 E6
+#   (+ B5 joint angles and B8 arm commands in arm motion runs). Read by scripts/record_run.py (one run = sim + bag +
+#   meta.json + 100 Hz table), scripts/arm_motion_node.py and scripts/bag_to_table.py.
+# =============================================================
+
+launch:
+  package: ocean_sim2sim_bringup
+  file: wamv_arm.launch.py
+  # no drone (predictor data only), boat ground truth every physics step, no GUI
+  args: {headless: 'true', drone_mode: none, ground_truth: 'true'}
+  ready_log: scene ready without a drone
+  ready_timeout_s: 240
+  shutdown_timeout_s: 30
+
+# topics in the bag (raw, as published; the 100 Hz table is made from them by bag_to_table.py)
+#   item numbers = the spec tables (A = required, B = optional)
+topics:
+  /clock: {items: [A1], note: sim time}
+  /sim/boat_ground_truth: {items: [A2, A3, A4, A5], note: 'GroundTruthPublisher, wamv/base_link, every physics step (240 Hz)'}
+  /base/imu: {items: [A6, A7, A8], note: 'boat IMU next to the robot base, 100 Hz on the 240 Hz physics grid, VRX noise'}
+  /joint_states: {items: [B5], note: arm 6 joints, 120 Hz}
+  /joint_command: {items: [B8], note: arm joint targets sent by arm_motion_node (60 Hz)}
+  /gripper/command: {items: [B9], note: gripper raw command (0 open .. 1150 closed)}
+  /gripper/joint_states: {items: [B10], note: gripper raw position, 30 Hz}
+  /protective_stop: {items: [], note: 'check only: must stay false'}
+  /recording/arm_event: {items: [], note: 'arm_motion_node segment starts (JSON), for C / analysis'}
+
+# arm motion (scripts/arm_motion_node.py). Lengths m, speeds m/s, angles rad, frame = robot base (robot_mount, = boat
+# axes FLU). Capture-like: grasp points in the drone target area of Isaac Sim (drone_targets_base x 0.45..0.65,
+# y -0.2..0.2, z 0.70..0.80, a bit wider), approached from below like the capture motion (gripper up).
+arm_motion:
+  publish_hz: 60.0              # /joint_command rate (sim time), = teleop / policy client
+  base_link: robot_mount
+  tcp_link: rh_p12_rn_tcp
+  init_pose: [-0.1889, -1.0776, 1.7304, -2.2242, 1.5700, -2.9566]   # = interface config init_pose (under_drone)
+  grasp_box: {x: [0.42, 0.68], y: [-0.22, 0.22], z: [0.68, 0.82]}
+  yaw_range: 0.35               # random tool yaw about the base z axis, +-
+  pregrasp_below: 0.15          # approach from this far below the grasp point
+  move_speed: [0.10, 0.30]      # uniform per segment: to the pregrasp point / back down / home
+  approach_speed: [0.03, 0.10]  # uniform per segment: straight up to the grasp point
+  hold_time: [0.5, 2.0]         # closed gripper at the grasp point (after the close time)
+  gripper_time: 2.3             # wait for a close / open (real gripper ~2.2 s)
+  home_probability: 0.3         # after a cycle: back to the init pose TCP with this probability
+  pause: [0.0, 1.5]             # still time between cycles
+  max_joint_speed: 1.5          # [rad/s] joint target rate limit (= teleop / policy client)
+  max_lead: 0.08                # [rad] joint target at most this far ahead of the measured joint (protective stop 5 deg)
+  ik_damping: 0.02
+  ik_iters: 5                   # DLS iterations per tick (kinematic IK on the commanded joints, as grasp_demo)
+  gripper_raw_max: 1150.0
