@@ -21,7 +21,7 @@ ros2 run ocean_sim2sim_recording record_run.py gain03_dir0 --arm scripted --seed
 ros2 run ocean_sim2sim_recording e2_sign_check.py
 
 # 표 다시 만들기 (record_run.py --no-convert 뒤, 또는 변환 규칙을 바꾼 뒤)
-ros2 run ocean_sim2sim_recording bag_to_table.py ocean_gazebo_recordings/<run>
+ros2 run ocean_sim2sim_recording bag_to_table.py recorded_data/<run>
 ```
 
 `record_run.py` 순서:
@@ -55,7 +55,7 @@ ros2 run ocean_sim2sim_recording bag_to_table.py ocean_gazebo_recordings/<run>
 
 ## 2. 기록 파일
 
-위치: **`ocean_gazebo_recordings/<YYYYMMDD_HHMMSS>_<이름>_<fixed|scripted>/`** (이 레포 맨 위, git 제외). `--out-dir` 로 바꿀 수 있음.
+위치: **`recorded_data/<YYYYMMDD_HHMMSS>_<이름>_<fixed|scripted>/`** (이 레포 맨 위, git 제외). `--out-dir` 로 바꿀 수 있음.
 
 | 파일 | 내용 |
 |---|---|
@@ -67,7 +67,7 @@ ros2 run ocean_sim2sim_recording bag_to_table.py ocean_gazebo_recordings/<run>
 | `rtf.jsonl` | wall 1 초마다 sim 시각과 RTF |
 | `record_run.log`, `launch.log`, `bag_record.log`, `arm_motion.log` | 실행 로그 |
 
-`e2_sign_check.py` 는 `ocean_gazebo_recordings/<시각>_e2_sign_check/e2_sign_check.json` 을 쓴다.
+`e2_sign_check.py` 는 `recorded_data/<시각>_e2_sign_check/e2_sign_check.json` 을 쓴다.
 
 ### 2.1 100 Hz 표 (`data_100hz.npz` 키)
 
@@ -153,7 +153,7 @@ ros2 run ocean_sim2sim_recording bag_to_table.py ocean_gazebo_recordings/<run>
 - 방향: 파도가 **나아가는** 쪽, world +x 에서 반시계. 배가 선수 +x 로 시작하므로 0° = 뒤에서 오는 파도 (following sea), 180° = 정면 (head sea), 90° = 좌현 쪽으로 진행
 - 바람 0 m/s, 조류 없음, 배 추진 없음 (정지, 파도에 떠밀림: 124 s 에 x −0.20 m, y −0.02 m, yaw 변화 0.003°)
 
-## 7. 기록 간격 (E1, 시험 기록 2026-11-25, gain 0.3, 120 s × 2: `ocean_gazebo_recordings/20261125_111528_pilot_gain03_dir0_fixed`, `..._111804_..._scripted`)
+## 7. 기록 간격 (E1, 시험 기록 2026-11-25, gain 0.3, 120 s × 2: `recorded_data/20261125_111528_pilot_gain03_dir0_fixed`, `..._111804_..._scripted`)
 
 | | 결과 |
 |---|---|

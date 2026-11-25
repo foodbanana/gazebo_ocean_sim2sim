@@ -3,7 +3,7 @@
 # bag_to_table.py - recording run directory (bag/ + meta.json) -> 100 Hz table again (docs/recording.md)
 #
 #   record_run.py does this at the end of a run; use this after --no-convert or to rebuild the table.
-#       ros2 run ocean_sim2sim_recording bag_to_table.py ocean_gazebo_recordings/<run>
+#       ros2 run ocean_sim2sim_recording bag_to_table.py recorded_data/<run>
 #   Writes <run>/data_100hz.npz, data_100hz.csv, e1_timing.json and updates meta.json "table".
 # =============================================================
 import argparse

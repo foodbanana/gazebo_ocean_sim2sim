@@ -11,8 +11,8 @@
 #   6. <run>/meta.json (spec C + E3 mounting + E6 waves), then the 100 Hz table (data_100hz.npz / .csv) and
 #      e1_timing.json (E1)
 #
-#   Run directory: <out>/<YYYYMMDD_HHMMSS>_<name>_<arm>/ ; default out = ocean_gazebo_recordings/ at the top of
-#   this repository (git-ignored), else ~/ocean_gazebo_recordings.
+#   Run directory: <out>/<YYYYMMDD_HHMMSS>_<name>_<arm>/ ; default out = recorded_data/ at the top of
+#   this repository (git-ignored), else ~/recorded_data.
 #
 #       ros2 run ocean_sim2sim_recording record_run.py gain03_dir0 --arm fixed --duration 900
 #       ros2 run ocean_sim2sim_recording record_run.py gain03_dir0 --arm scripted --seed 1 --duration 900
@@ -65,8 +65,8 @@ class Run:
         self.a, self.cfg = args, cfg
         stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         root = meta.repo_root()
-        out = args.out_dir or (os.path.join(root, 'ocean_gazebo_recordings') if root
-                               else os.path.expanduser('~/ocean_gazebo_recordings'))
+        out = args.out_dir or (os.path.join(root, 'recorded_data') if root
+                               else os.path.expanduser('~/recorded_data'))
         self.dir = os.path.join(out, f'{stamp}_{args.name}_{args.arm}')
         os.makedirs(self.dir)
         self.launch = self.bag = self.arm = None
