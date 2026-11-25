@@ -42,7 +42,8 @@ def run_text(cmd, cwd=None, timeout=10):
 
 def versions():
     root = repo_root()
-    out = {'gazebo': run_text(['gz', 'sim', '--version']), 'ros_distro': os.environ.get('ROS_DISTRO')}
+    gz = run_text(['gz', 'sim', '--version'])
+    out = {'gazebo': gz.splitlines()[0] if gz else None, 'ros_distro': os.environ.get('ROS_DISTRO')}
     if root:
         out['gazebo_ocean_sim2sim_commit'] = run_text(['git', 'describe', '--always', '--dirty'], cwd=root)
         vrx = os.path.join(os.path.dirname(root), 'vrx')

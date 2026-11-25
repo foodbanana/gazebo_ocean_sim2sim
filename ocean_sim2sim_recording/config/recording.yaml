@@ -33,6 +33,7 @@ topics:
 # y -0.2..0.2, z 0.70..0.80, a bit wider), approached from below like the capture motion (gripper up).
 arm_motion:
   publish_hz: 60.0              # /joint_command rate (sim time), = teleop / policy client
+  lead_in_s: 2.0                # hold the init pose on /joint_command this long before the motion / duration starts
   base_link: robot_mount
   tcp_link: rh_p12_rn_tcp
   init_pose: [-0.1889, -1.0776, 1.7304, -2.2242, 1.5700, -2.9566]   # = interface config init_pose (under_drone)

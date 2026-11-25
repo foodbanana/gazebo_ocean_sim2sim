@@ -122,6 +122,8 @@ class ArmMotion(Node):
         # a recorder must see the command topics BEFORE the motion starts (discovery of a new topic takes ~2 s;
         # without this the first commands are missing in the bag)
         pubs = (self.pub_cmd, self.pub_grip, self.pub_event)
+        if wait_subscribers > 0:
+            self.get_logger().info(f'waiting for {wait_subscribers} subscribers on /joint_command and /gripper/command')
         while (rclpy.ok() and not stop['v'] and wait_subscribers > 0
                and min(p.get_subscription_count() for p in pubs[:2]) < wait_subscribers):
             rclpy.spin_once(self, timeout_sec=0.1)
@@ -143,10 +145,12 @@ class ArmMotion(Node):
         if off > 0.05:
             self.get_logger().error(f'arm is {off:.3f} rad from the init pose: call /sim/reset first')
             return 2
-        t0 = self.now()
+        # lead-in: hold the init pose on /joint_command for lead_in_s before the motion (the first messages to a new
+        # subscriber can still be lost after it shows up in the subscription count: 0.29 s in a pilot run)
+        lead_end = self.now() + c.get('lead_in_s', 0.0)
+        t0 = None
         self.gripper(False)
-        self.event('start', seed=self.seed, duration=duration, init_pose=list(c['init_pose']),
-                   tcp_home_base=[round(v, 4) for v in p_home])
+        self.event('lead_in', T=c.get('lead_in_s', 0.0))
         gen = self.segments(p_home, R_home) if self.mode == 'scripted' else None
         seg, seg_t0, p_from, R_from, seg_T = None, None, p_home, R_home, 0.0
         next_tick = self.now()
@@ -162,10 +166,15 @@ class ArmMotion(Node):
                 self.event('protective_stop')
                 self.get_logger().error('protective stop: the run is not valid')
                 return 3
-            if duration > 0 and t - t0 >= duration:
+            if t0 is None and t >= lead_end:
+                t0 = t
+                self.gripper(False)
+                self.event('start', seed=self.seed, duration=duration, init_pose=list(c['init_pose']),
+                           tcp_home_base=[round(v, 4) for v in p_home])
+            if t0 is not None and duration > 0 and t - t0 >= duration:
                 self.event('end', elapsed=round(t - t0, 3))
                 return 0
-            if self.mode == 'fixed':
+            if self.mode == 'fixed' or t0 is None:
                 q_goal = init
             else:
                 if seg is None or t - seg_t0 >= seg_T:
@@ -206,7 +215,7 @@ class ArmMotion(Node):
             m.name = names
             m.position = [float(v) for v in q_cmd]
             self.pub_cmd.publish(m)
-        self.event('stopped', elapsed=round(self.now() - t0, 3))
+        self.event('stopped', elapsed=None if t0 is None else round(self.now() - t0, 3))
         return 0
 
 

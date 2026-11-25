@@ -128,7 +128,7 @@ def convert(run_dir, joint_names=None, log=print):
     if js and names:
         ns_ = np.array([stamp_ns(m.header) for _, m in js], dtype=np.int64)
         val = np.array([[dict(zip(m.name, m.position)).get(n, np.nan) for n in names] for _, m in js])
-        cols['joint_pos'], _ = zoh(ns_, val, grid)
+        cols['joint_pos'], cols['joint_pos_age_s'] = zoh(ns_, val, grid)
     jc = msgs.get('/joint_command', [])
     if jc and names:
         ns_ = np.array([stamp_ns(m.header) for _, m in jc], dtype=np.int64)
@@ -178,6 +178,8 @@ def convert(run_dir, joint_names=None, log=print):
             e1['sources'][topic] = intervals(np.array([stamp_ns(m.header) for _, m in rows], dtype=np.int64))
     ps = msgs.get('/protective_stop', [])
     e1['protective_stop_true_msgs'] = int(sum(1 for _, m in ps if m.data))
+    if 'joint_pos_age_s' in cols:
+        e1['joint_pos_age_ms_max'] = round(float(np.nanmax(cols['joint_pos_age_s'])) * 1e3, 3)
     rtf_path = os.path.join(run_dir, 'rtf.jsonl')
     if os.path.exists(rtf_path):
         rtf = [json.loads(line)['rtf'] for line in open(rtf_path) if line.strip()]

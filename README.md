@@ -104,7 +104,9 @@ ros2 launch ocean_sim2sim_bringup wamv_arm.launch.py wave_gain:=0.18 headless:=t
 | `paused` | `False` | `True`: start paused |
 | `wave_gain` | (empty = world file value) | VRX wavefield gain ([`docs/waves.md`](docs/waves.md)) |
 | `wave_period` | (empty = world file value) | VRX wavefield peak period [s] |
-| `drone_mode` | `px4` | `px4`: PX4 SITL v1.16.0 flies the drone (venv + PX4-Autopilot needed). `fixed`: drone held still on a world-fixed anchor |
+| `wave_direction` | (empty = world file value, 0) | VRX wavefield mean direction [rad] the waves travel to, from world +x (0 = towards the bow at start) |
+| `drone_mode` | `px4` | `px4`: PX4 SITL v1.16.0 flies the drone (venv + PX4-Autopilot needed). `fixed`: drone held still on a world-fixed anchor. `none`: no drone (boat motion recordings) |
+| `ground_truth` | `false` | `true`: boat ground truth (pose, body-frame velocity) every physics step on `/sim/boat_ground_truth` ([`docs/recording.md`](docs/recording.md)) |
 | `drone_motion` | `hover` | `px4` only. `static`: hold the hover point. `hover`: sine motion around it (Isaac Sim data collection setting). `rc`: a pilot flies it with the real transmitter after the air start ([`docs/teleop.md`](docs/teleop.md)) |
 | `rc_port` | (empty = `rc_input.yaml` port: `auto`) | `drone_motion:=rc`: serial device of the Pico that reads the transmitter receiver. `auto` finds the one `/dev/serial/by-id` entry named `usb-MicroPython_Board...` (error with the list if none or several) |
 | `hover_preset` | `mid` | `px4` + `hover` only: sine amplitude `small` / `mid` / `big` (Isaac Sim `drone_iris.yaml`) |
@@ -157,10 +159,11 @@ All stamps are sim time (`/clock`); use `ros2 topic hz --use-sim-time ...`.
 | `/gripper/joint_states` | `sensor_msgs/JointState` | sim -> | `rh_p12_rn` present raw (0 ~ 1150), ~30 Hz (`/gripper/target`: last goal) |
 | `/cam/wrist/color/image_raw`, `/cam/wrist/color/camera_info` | `sensor_msgs/Image`, `CameraInfo` | sim -> | D435i color 640 x 480 rgb8, ~30 Hz, real-camera intrinsics; subscribe RELIABLE ([`docs/wrist_camera.md`](docs/wrist_camera.md)) |
 | `/protective_stop` | `std_msgs/Bool` | sim -> | true while the protective stop is active (contact force / joint jump; [`docs/interface.md`](docs/interface.md) 8) |
-| `/base/imu` | `sensor_msgs/Imu` | sim -> | boat IMU (stock VRX WAM-V IMU, 100 Hz, with noise) |
+| `/base/imu` | `sensor_msgs/Imu` | sim -> | boat IMU next to the robot base ((-0.15, 0, 1.3) in `wamv/base_link`, VRX IMU sensor, 100 Hz, with noise) |
 | `/base/odom` | `nav_msgs/Odometry` | sim -> | robot base (`robot_mount`) pose relative to the episode start, 30 Hz |
 | `/sim/reset` | `std_srvs/Trigger` | service | new episode: drone off, arm to the start pose, gripper open, drone at the next (seeded) target point; JSON answer |
 | `/sim/drone_kill` | `std_srvs/Trigger` | service | drone motors off (after a grasp) |
+| `/sim/boat_ground_truth` | `nav_msgs/Odometry` | sim -> | `ground_truth:=true` only: `wamv/base_link` world pose, body-frame velocity, every physics step (240 Hz) |
 
 ```bash
 ros2 topic pub --once /joint_command sensor_msgs/msg/JointState \
@@ -226,6 +229,8 @@ Run with the main launch up (except `regression.py`, which starts its own). Repo
 | `ros2 run ocean_sim2sim_policy fake_policy_server.py [--delay 0.18]` | fake openpi server (constant action chunks) to test the plumbing without a model | [`docs/policy.md`](docs/policy.md) |
 | `ros2 run ocean_sim2sim_drone drone_link_test.py --test hover` | drone plugin check without PX4 (`drone_mode:=fixed`) | [`docs/drone_px4.md`](docs/drone_px4.md) |
 | `ros2 run ocean_sim2sim_drone rc_watch.py [--port DEV]` | transmitter serial values and mapped sticks (no sim) | [`docs/teleop.md`](docs/teleop.md) |
+| `ros2 run ocean_sim2sim_recording record_run.py <name> --arm fixed\|scripted [--duration 900] [--wave-gain G] [--wave-direction-deg D]` | boat motion recording run for the ship motion predictor (own headless sim, mcap bag, meta.json, 100 Hz table) | [`docs/recording.md`](docs/recording.md) |
+| `ros2 run ocean_sim2sim_recording e2_sign_check.py` | frames and signs in calm water (gravity, bow up) | [`docs/recording.md`](docs/recording.md) |
 
 ### Policy inference
 
@@ -278,8 +283,9 @@ Without the devices: `ros2 run ocean_sim2sim_teleop check_xr_teleop.py` (scripte
 | `ur5_rh_p12_description` | UR5 (CB3) + ROBOTIS RH-P12-RN(A) gripper + RealSense D435i wrist camera as one URDF, its `ros2_control` / Gazebo xacros, controller and bridge configs, Isaac Sim convex collision hulls |
 | `ocean_sim2sim_interface` | `interface_node`: real-robot / Isaac Sim topics on top of ros2_control (`/joint_command`, `/gripper/*`, `/joint_states`, `/protective_stop`); `scene_node`: the drone episode (`/sim/reset`, `/sim/drone_kill`, `/base/odom`); grasp judge, kinematics, observation helpers |
 | `ocean_sim2sim_drone` | PX4 SITL drone: `DroneLockstep` Gazebo system (C++), `px4_bridge_node.py` (MAVLink HIL lockstep, virtual sensors, thrust model, Offboard commander, ported from the Isaac Sim / Pegasus code), `drone_cmd.py` CLI |
-| `ocean_sim2sim_gz_plugins` | Gazebo system `ContactMonitor` (per-link contact forces of the arm for the protective stop, [`docs/interface.md`](docs/interface.md) 8) |
+| `ocean_sim2sim_gz_plugins` | Gazebo systems `ContactMonitor` (per-link contact forces of the arm for the protective stop, [`docs/interface.md`](docs/interface.md) 8) and `GroundTruthPublisher` (pose and body-frame velocity of one link every physics step) |
 | `ocean_sim2sim_policy` | openpi policy client (port of the Isaac Sim client: observation pairing, action chunks at 60 Hz, safety limits), fake server, offline test |
+| `ocean_sim2sim_recording` | boat motion recordings for the ship motion predictor: `record_run.py` (one run in one command), `arm_motion_node.py` (fixed / scripted capture-like arm motion), `bag_to_table.py` (exact 100 Hz table), `e2_sign_check.py` |
 | `ocean_sim2sim_teleop` | PICO VR arm teleop node (port of the Isaac Sim `xr_teleop_node`: One Euro filter, differential IK from `/robot_description`, controller buttons), episode recorder `record_toggle.py`, `plot_bag_imu.py`, headset-less test |
 
 ### Boat with an arm
@@ -314,6 +320,7 @@ Arm control: `gz_ros2_control` with `joint_trajectory_controller` (position) for
 | [`docs/policy.md`](docs/policy.md) | openpi policy client (`policy_client_node.py`) |
 | [`docs/regression.md`](docs/regression.md) | one-command regression suite (`regression.py`), checks and expected values |
 | [`docs/teleop.md`](docs/teleop.md) | PICO VR arm teleop, transmitter drone teleop, episode recording, IMU plots |
+| [`docs/recording.md`](docs/recording.md) | boat motion recordings for the ship motion predictor: files, format, topic / item table, E1 E2 E3 E6 |
 
 ## Known sim2sim gaps
 
@@ -331,7 +338,7 @@ Same inputs as Isaac Sim; these result differences are kept and recorded, not tu
   ([`docs/drone_px4.md`](docs/drone_px4.md) 7, 8). Bullet is kept by decision (FCL / DART detectors were worse elsewhere).
 - **Boat drift**: the boat drifts with the waves, so the distance to the world-fixed drone changes during an episode.
   Kept on purpose ([`docs/waves.md`](docs/waves.md) 5).
-- **Boat IMU**: stock VRX IMU (100 Hz, noise, other position) vs Isaac Sim `/base/imu` (120 Hz, no noise)
+- **Boat IMU**: VRX IMU sensor next to the robot base (100 Hz, noise) vs Isaac Sim `/base/imu` (120 Hz, no noise)
   ([`docs/drone_px4.md`](docs/drone_px4.md) 5).
 
 ## License

@@ -168,14 +168,13 @@ class Run:
         while time.time() - t0 < 30:
             txt = self.text('bag_record')
             missing = [t for t in topics if f"Subscribed to topic '{t}'" not in txt]
-            # command / event topics appear when the arm node starts
-            if not [t for t in missing if t not in ('/joint_command', '/gripper/command', '/recording/arm_event')]:
-                self.log(f'bag recording ({len(topics) - len(missing)} topics subscribed, waiting for {missing})')
+            if not missing:                      # the arm node is already up: its command topics exist too
+                self.log(f'bag recording ({len(topics)} topics subscribed)')
                 return
             if self.bag.poll() is not None:
                 raise RuntimeError(f'ros2 bag record exited, see {self.dir}/bag_record.log')
             time.sleep(0.5)
-        raise RuntimeError(f'bag did not subscribe to all state topics: {missing}')
+        raise RuntimeError(f'bag did not subscribe to all topics: {missing}')
 
     def rtf_sampler(self, w, stop):
         with open(os.path.join(self.dir, 'rtf.jsonl'), 'w') as f:
@@ -208,14 +207,22 @@ class Run:
             self.wait_sim(w, a.settle)
             waves, sent = meta.read_wave_params()
             threading.Thread(target=self.rtf_sampler, args=(w, stop_rtf), daemon=True).start()
-            self.start_bag()
-            self.wait_sim(w, 1.0)
-            t_arm = w.sim
+            # arm node FIRST (it waits for the interface + the bag on its command topics, then a 2 s lead-in), the
+            # bag last: no new ROS node joins while recording (a joining node stalled /joint_states for 0.34 s in
+            # the bag in a pilot run)
             self.arm = self.popen(['ros2', 'run', 'ocean_sim2sim_recording', 'arm_motion_node.py', '--mode',
                                    'fixed' if a.arm == 'fixed' else 'scripted', '--seed', str(a.seed),
                                    '--duration', str(a.duration), '--wait-subscribers', '2']
                                   + (['--config', a.config] if a.config else []),
                                   'arm_motion')
+            t_w = time.time()
+            while 'waiting for' not in self.text('arm_motion'):
+                if self.arm.poll() is not None or time.time() - t_w > 60:
+                    raise RuntimeError(f'arm_motion_node did not start, see {self.dir}/arm_motion.log')
+                time.sleep(0.2)
+            self.wait_sim(w, 1.0)
+            self.start_bag()
+            t_arm = w.sim
             last = time.time()
             while self.arm.poll() is None:
                 if self.launch.poll() is not None:
@@ -233,7 +240,7 @@ class Run:
             self.wait_sim(w, 1.0)
             t_end = w.sim
             valid = not w.pstop
-            self.info.update(sim_arm_start_s=round(t_arm, 4), sim_end_s=round(t_end, 4), reset=reset,
+            self.info.update(sim_bag_start_s=round(t_arm, 4), sim_end_s=round(t_end, 4), reset=reset,
                              protective_stop=w.pstop)
         except BaseException as e:
             self.log(f'ERROR: {e!r}')
