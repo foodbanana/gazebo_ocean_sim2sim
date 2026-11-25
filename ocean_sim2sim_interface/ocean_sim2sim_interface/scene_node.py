@@ -22,6 +22,9 @@
       6. hold off (gripper goal = open)
     Response message = JSON (seed, target, offsets, positions, sim seconds per phase, wall time).
     On failure success False and the hold stays on (commands ignored) until a reset succeeds.
+  - drone_mode none: no drone at all (boat motion recordings, ocean_sim2sim_recording). The scene is ready once the
+    boat has settled; /sim/reset only does steps 1, 3 and 6 (arm to init_pose, gripper open); /sim/drone_kill answers
+    success False.
 """
 import json
 import math
@@ -157,10 +160,11 @@ class SceneNode(Node):
         # drone: fixed = held on the world anchor (no flight); px4 = PX4 SITL flies it (ocean_sim2sim_drone px4_bridge
         # node). PX4 air start (docs/drone_px4.md): anchored -> PX4 restart (+ EKF wait) -> arm (Offboard) -> target
         # lifted by px4_release_lift -> release the anchor when the rotor thrust reaches px4_release_thrust -> target
-        # back to the hover point -> settle_time -> drone motion (static / hover sine, Isaac Sim presets)
+        # back to the hover point -> settle_time -> drone motion (static / hover sine, Isaac Sim presets);
+        # none = no drone (boat motion recordings)
         self.drone_mode = str(p('drone_mode', 'fixed').value)
-        if self.drone_mode not in ('fixed', 'px4'):
-            raise RuntimeError(f'drone_mode must be fixed or px4: {self.drone_mode}')
+        if self.drone_mode not in ('fixed', 'px4', 'none'):
+            raise RuntimeError(f'drone_mode must be fixed, px4 or none: {self.drone_mode}')
         self.px4_lift = float(p('px4_release_lift', 0.10).value)
         self.px4_release_thrust = float(p('px4_release_thrust', 0.8 * 9.81).value)
         self.px4_release_timeout = float(p('px4_release_timeout', 20.0).value)
@@ -384,6 +388,14 @@ class SceneNode(Node):
             return
         self.busy = True                  # a /sim/reset now would race with this spawn: it answers "not ready"
         self.timer.cancel()
+        if self.drone_mode == 'none':
+            base, _ = self.mean_base()
+            self._odom_origin()
+            self.spawned = True           # scene ready: /sim/reset accepted
+            self.busy = False
+            self.get_logger().info(f'scene ready without a drone (drone_mode none), mean robot base over '
+                                   f'{self.base_average:g} s ({base[0]:.3f}, {base[1]:.3f}, {base[2]:.3f})')
+            return
         try:
             pos, yaw, base = self.drone_world_pose(self.drone_pos_base)
             self._spawn('drone_anchor', ANCHOR_SDF, pos, yaw)
@@ -469,7 +481,7 @@ class SceneNode(Node):
         return None
 
     def _on_reset(self, req, res):
-        why = ('scene not ready yet (drone not spawned)' if not self.spawned else 'reset already running' if self.busy
+        why = ('scene not ready yet (boat settling / drone not spawned)' if not self.spawned else 'reset already running' if self.busy
                else self.arm_not_ready())
         if why:
             res.success = False
@@ -490,17 +502,18 @@ class SceneNode(Node):
                 self._px4_call('kill')         # motors off first (Isaac Sim: kill -> teleport -> PX4 restart)
                 if not self.wait_sim(2.0, until=lambda: not (self.px4_state or {}).get('armed')):
                     raise RuntimeError('PX4 still armed 2 s after kill')
-            if self.attached is not False:
+            if self.drone_mode != 'none' and self.attached is not False:
                 self.pub_detach.publish(Empty())
                 if not self.wait_sim(2.0, until=lambda: self.attached is False):
                     raise RuntimeError('drone did not report "detached" within 2 s')
-            self.wait_sim(0.05)
-            self._delete('drone')
-            self.wait_sim(0.05)
-            self._delete('drone_anchor')
-            self.wait_sim(0.05)
-            self.attached = None
-            phases['remove_drone'], t = self.now() - t, self.now()
+            if self.drone_mode != 'none':
+                self.wait_sim(0.05)
+                self._delete('drone')
+                self.wait_sim(0.05)
+                self._delete('drone_anchor')
+                self.wait_sim(0.05)
+                self.attached = None
+                phases['remove_drone'], t = self.now() - t, self.now()
             # 3. arm to the start pose, gripper open
             if was_stopped:
                 self._move_joints(self.pub_arm, self.arm_joints, self.escape_pose, self.reset_arm_time)
@@ -514,14 +527,18 @@ class SceneNode(Node):
                 raise RuntimeError(f'arm did not reach init_pose (rad off: {off or "no /joint_states"})')
             phases['arm_to_start'], t = self.now() - t, self.now()
             # 4. new hover position, 5. spawn
-            name, target, offset = self.next_target(k)
-            pos_base = [a + b for a, b in zip(target, offset)]
-            pos, yaw, base = self.drone_world_pose(pos_base)
-            self._spawn('drone_anchor', ANCHOR_SDF, pos, yaw)
-            self._spawn('drone', self.drone_sdf, pos, yaw)
-            attached = self.wait_sim(2.0, until=lambda: self.attached is True)
-            phases['spawn_drone'], t = self.now() - t, self.now()
             px4 = None
+            if self.drone_mode == 'none':
+                name = target = offset = pos_base = pos = yaw = attached = None
+                base, _ = self.mean_base()
+            else:
+                name, target, offset = self.next_target(k)
+                pos_base = [a + b for a, b in zip(target, offset)]
+                pos, yaw, base = self.drone_world_pose(pos_base)
+                self._spawn('drone_anchor', ANCHOR_SDF, pos, yaw)
+                self._spawn('drone', self.drone_sdf, pos, yaw)
+                attached = self.wait_sim(2.0, until=lambda: self.attached is True)
+                phases['spawn_drone'], t = self.now() - t, self.now()
             if self.drone_mode == 'px4':
                 # hover sine seed: reset seed + 1,000,000 (Isaac Sim sim_reset)
                 px4 = self._px4_start(pos, self.seed + k + 1_000_000, phases)
@@ -530,11 +547,11 @@ class SceneNode(Node):
             self._hold(False)
             self.reset_count += 1
             self._odom_origin()           # episode start = odom origin
+            r5 = (lambda v: None if v is None else [round(a, 5) for a in v])
             info = {'reset_count': self.reset_count, 'seed': self.seed, 'offset_seed': self.seed + k,
                     'drone_target': name, 'drone_target_base': target,
-                    'drone_offset': [round(v, 5) for v in offset],
-                    'drone_pos_base': [round(v, 5) for v in pos_base],
-                    'drone_world': [round(v, 5) for v in pos], 'drone_yaw': round(yaw, 5),
+                    'drone_offset': r5(offset), 'drone_pos_base': r5(pos_base),
+                    'drone_world': r5(pos), 'drone_yaw': None if yaw is None else round(yaw, 5),
                     'mean_robot_base': [round(v, 5) for v in base],
                     'init_pose': self.init_pose, 'drone_attached': attached,
                     'phases': {k2: round(v, 3) for k2, v in phases.items()},
@@ -542,8 +559,10 @@ class SceneNode(Node):
                     'sim_time': round(self.now(), 4), 'sim_s': round(self.now() - t0, 3), 'wall_s': round(time.time() - w0, 3)}
             res.success = True
             res.message = json.dumps(info)
-            self.get_logger().info(f'reset {self.reset_count}: drone {name} + {info["drone_offset"]} -> '
-                                   f'base {info["drone_pos_base"]}, {info["sim_s"]} s sim')
+            self.get_logger().info(f'reset {self.reset_count}: '
+                                   + ('no drone' if name is None else
+                                      f'drone {name} + {info["drone_offset"]} -> base {info["drone_pos_base"]}')
+                                   + f', {info["sim_s"]} s sim')
         except Exception as e:  # noqa: BLE001  report, keep the hold on (no commands until a reset succeeds)
             res.success = False
             res.message = json.dumps({'error': str(e), 'phases': phases})
@@ -554,6 +573,10 @@ class SceneNode(Node):
 
     def _on_kill(self, req, res):
         t = self.get_clock().now().nanoseconds * 1e-9
+        if self.drone_mode == 'none':
+            res.success = False
+            res.message = json.dumps({'sim_time': t, 'error': 'no drone (drone_mode none)'})
+            return res
         if self.drone_mode == 'px4':
             try:
                 info = self._px4_call('kill', timeout=10.0)

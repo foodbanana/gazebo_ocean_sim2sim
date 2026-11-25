@@ -20,7 +20,10 @@
        robot base, behind it (arm root at (0, 0, 1.3), the arm works towards +x): our own IMU installed by the robot,
        as on the real boat (2026-11-04 decision; was the stock VRX WAM-V IMU pose (0.3, -0.2, 1.3)). 100 Hz, VRX noise.
        Published as /base/imu (Isaac Sim moving-base topic, policy input base_imu; docs/drone_px4.md 5) -->
-  <xacro:macro name="ocean_wamv" params="imu_x:=-0.15 imu_y:=0.0 imu_z:=1.3">
+  <!-- ground_truth_topic: non-empty = GroundTruthPublisher (ocean_sim2sim_gz_plugins) on ${namespace}/base_link: world
+       pose and body-frame (FLU) velocity of the hull link from the physics engine every physics step (boat motion
+       recordings, docs/recording.md). Empty = off -->
+  <xacro:macro name="ocean_wamv" params="imu_x:=-0.15 imu_y:=0.0 imu_z:=1.3 ground_truth_topic:=''">
 
     <!-- hull (wamv_base.urdf.xacro) + aft thrusters + Surface/SimpleHydrodynamics plugins -->
     <xacro:wamv_gazebo thruster_layout="$(find wamv_gazebo)/urdf/thruster_layouts/wamv_aft_thrusters.xacro"/>
@@ -54,6 +57,16 @@
         <dimensions>3</dimensions>
       </plugin>
     </gazebo>
+    <xacro:if value="${ground_truth_topic != ''}">
+      <gazebo>
+        <plugin filename="OceanSim2simGroundTruthPublisher" name="ocean_sim2sim::GroundTruthPublisher">
+          <link_name>${namespace}/base_link</link_name>
+          <topic>${ground_truth_topic}</topic>
+          <frame_id>world</frame_id>
+          <update_rate>0</update_rate>
+        </plugin>
+      </gazebo>
+    </xacro:if>
 
   </xacro:macro>
 </robot>

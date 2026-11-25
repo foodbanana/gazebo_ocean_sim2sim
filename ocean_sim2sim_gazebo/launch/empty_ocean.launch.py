@@ -40,8 +40,9 @@ def launch(context, *args, **kwargs):
     world_name = os.path.splitext(arg('world'))[0]
     tmp_dirs = []
     aux = flag('aux_views')
-    if arg('wave_gain') or arg('wave_period') or aux:
-        world_name = _world_copy(world_name, arg('wave_gain'), arg('wave_period'), aux, tmp_dirs)
+    waves = {'gain': arg('wave_gain'), 'period': arg('wave_period'), 'direction': arg('wave_direction')}
+    if any(waves.values()) or aux:
+        world_name = _world_copy(world_name, waves, aux, tmp_dirs)
     sim_mode = arg('sim_mode')
     robot_urdf = arg('urdf')
     # The boat is always spawned at the world origin.
@@ -67,8 +68,15 @@ def launch(context, *args, **kwargs):
 
     launch_processes.append(RegisterEventHandler(OnShutdown(on_shutdown=[
         OpaqueFunction(function=stop_gazebo),
-        OpaqueFunction(function=lambda _c: [shutil.rmtree(d, ignore_errors=True) for d in tmp_dirs])])))
+        OpaqueFunction(function=lambda _c: _remove_dirs(tmp_dirs))])))
     return launch_processes
+
+
+def _remove_dirs(dirs):
+    """Remove the temporary world copies. Returns None: an OpaqueFunction must return launch entities or None
+    (a list of rmtree results = [None] made the shutdown fail with "'NoneType' object has no attribute 'visit'")."""
+    for d in dirs:
+        shutil.rmtree(d, ignore_errors=True)
 
 
 AUX_VIEW_PANELS = ''.join(f'''
@@ -82,8 +90,9 @@ AUX_VIEW_PANELS = ''.join(f'''
       </plugin>''' for title, name in (('Side view', 'side'), ('Top view', 'top')))
 
 
-def _world_copy(world_name, gain, period, aux_views, tmp_dirs):
-    """Copy of the world with other VRX wavefield gain / period (the vrx::PublisherPlugin message on
+def _world_copy(world_name, waves, aux_views, tmp_dirs):
+    """Copy of the world with other VRX wavefield gain / period / direction (waves: key -> value string, empty = keep;
+    the vrx::PublisherPlugin message on
     /vrx/wavefield/parameters; the boat buoyancy and the wave visual both read it, docs/waves.md) and / or the GUI
     panels of the operator views (aux_views: ImageDisplay of /aux_view/side and /aux_view/top, cameras from
     aux_views.xacro, docs/teleop.md). Same file name (= world name, used in the topic names) in a temporary folder,
@@ -93,7 +102,7 @@ def _world_copy(world_name, gain, period, aux_views, tmp_dirs):
         src = os.path.join(get_package_share_directory('ocean_sim2sim_gazebo'), 'worlds', src)
     with open(src) as f:
         sdf = f.read()
-    for key, val in (('gain', gain), ('period', period)):
+    for key, val in waves.items():
         if not val:
             continue
         float(val)                                        # error on a bad number
@@ -146,6 +155,8 @@ def generate_launch_description():
         ('extra_gz_args', '', 'Additional arguments for gz sim'),
         ('wave_gain', '', 'VRX wavefield gain (empty = as in the world file; empty_ocean 0.3, calm 0). docs/waves.md'),
         ('wave_period', '', 'VRX wavefield peak period [s] (empty = as in the world file; empty_ocean 5)'),
+        ('wave_direction', '', 'VRX wavefield mean direction [rad] the waves travel to, in the world x-y plane '
+                               '(0 = +x = towards the bow of the boat at start; empty = as in the world file, 0)'),
         ('aux_views', 'False', 'True: GUI panels Side view / Top view (cameras: urdf xacro arg aux_views:=true)'),
     ]
     return LaunchDescription(

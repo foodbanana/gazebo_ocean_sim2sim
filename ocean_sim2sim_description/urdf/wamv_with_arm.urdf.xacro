@@ -39,8 +39,11 @@
   <xacro:arg name="arm_mount_rpy" default="0 0 0"/>
 
   <!-- ===== boat ===== -->
+  <!-- ground_truth_topic: boat ground truth every physics step (GroundTruthPublisher), empty = off;
+       wamv_arm.launch.py ground_truth:=true sets /sim/boat_ground_truth -->
+  <xacro:arg name="ground_truth_topic" default=""/>
   <xacro:include filename="$(find ocean_sim2sim_description)/urdf/wamv_base.xacro"/>
-  <xacro:ocean_wamv/>
+  <xacro:ocean_wamv ground_truth_topic="$(arg ground_truth_topic)"/>
 
   <!-- ===== arm on the deck ===== -->
   <xacro:include filename="$(arg arm_xacro)"/>

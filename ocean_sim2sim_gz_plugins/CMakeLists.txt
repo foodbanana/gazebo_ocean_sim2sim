@@ -17,6 +17,14 @@ target_link_libraries(OceanSim2simContactMonitor PUBLIC
   gz-msgs10::gz-msgs10 gz-transport13::gz-transport13)
 install(TARGETS OceanSim2simContactMonitor DESTINATION lib)
 
+# Gazebo system: ground truth pose / body-frame velocity of one link every physics step (src/GroundTruthPublisher.cc)
+add_library(OceanSim2simGroundTruthPublisher SHARED src/GroundTruthPublisher.cc)
+target_compile_features(OceanSim2simGroundTruthPublisher PRIVATE cxx_std_17)
+target_link_libraries(OceanSim2simGroundTruthPublisher PUBLIC
+  gz-sim8::core gz-plugin2::register gz-common5::gz-common5 gz-math7::gz-math7
+  gz-msgs10::gz-msgs10 gz-transport13::gz-transport13)
+install(TARGETS OceanSim2simGroundTruthPublisher DESTINATION lib)
+
 # plugin found by Gazebo through GZ_SIM_SYSTEM_PLUGIN_PATH
 ament_environment_hooks("${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/${PROJECT_NAME}.dsv.in")
 ament_package()

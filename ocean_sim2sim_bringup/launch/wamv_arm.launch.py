@@ -11,7 +11,9 @@
 #   5. ocean_sim2sim_interface: Isaac Sim / real-robot topics (/joint_command, /gripper/*, /protective_stop).
 #   6. ros_gz_bridge for the arm sensors (wrist camera -> /cam/wrist/color/*).
 #   7. scene_node (drone to grasp, /sim/drone_kill, /sim/reset) + its Gazebo bridges (also /sim/robot_contacts for the
-#      protective stop).
+#      protective stop). drone_mode:=none = no drone (boat motion recordings, ocean_sim2sim_recording).
+#   ground_truth:=true adds the boat ground truth (GroundTruthPublisher on wamv/base_link, every physics step) on
+#   /sim/boat_ground_truth (nav_msgs/Odometry), docs/recording.md.
 #      It exits on an invalid command -> the whole launch shuts down (no silent fallback).
 
 import os
@@ -42,6 +44,12 @@ def launch(context, *args, **kwargs):
         raise RuntimeError(f"drone_motion must be static, hover or rc: {arg('drone_motion')}")
     if arg('drone_motion') == 'rc' and arg('drone_mode') != 'px4':
         raise RuntimeError('drone_motion:=rc needs drone_mode:=px4 (the transmitter flies the PX4 drone)')
+    if arg('drone_mode') not in ('px4', 'fixed', 'none'):
+        raise RuntimeError(f"drone_mode must be px4, fixed or none: {arg('drone_mode')}")
+    ground_truth = arg('ground_truth').lower()
+    if ground_truth not in ('true', 'false'):
+        raise RuntimeError(f"ground_truth must be true or false: {arg('ground_truth')}")
+    ground_truth = ground_truth == 'true'
 
     # operator views (Side / Top cameras + GUI panels, not recorded; Isaac Sim --aux-views: on with the GUI by default)
     headless = arg('headless').lower() in ('true', '1', 'yes')
@@ -54,7 +62,8 @@ def launch(context, *args, **kwargs):
 
     # 1. one URDF for everything
     xacro_cmd = (['xacro', arg('xacro_file')] + shlex.split(arg('xacro_args'))
-                 + (['aux_views:=true', f"aux_views_rate:={arg('aux_views_rate')}"] if aux else []))
+                 + (['aux_views:=true', f"aux_views_rate:={arg('aux_views_rate')}"] if aux else [])
+                 + ([f'ground_truth_topic:={GROUND_TRUTH_GZ}'] if ground_truth else []))
     urdf = subprocess.run(xacro_cmd, check=True, capture_output=True, text=True).stdout
     fd, urdf_path = tempfile.mkstemp(prefix='ocean_sim2sim_', suffix='.urdf')
     with os.fdopen(fd, 'w') as f:
@@ -71,6 +80,7 @@ def launch(context, *args, **kwargs):
             'paused': arg('paused'),
             'wave_gain': arg('wave_gain'),
             'wave_period': arg('wave_period'),
+            'wave_direction': arg('wave_direction'),
             'aux_views': str(aux),
         }.items())
 
@@ -136,7 +146,8 @@ def launch(context, *args, **kwargs):
                    # per robot link contact forces (ContactMonitor plugin, JSON) -> protective stop of the interface
                    '/sim/robot_contacts@std_msgs/msg/String[gz.msgs.StringMsg',
                    # boat IMU (stock VRX WAM-V IMU: pose, 100 Hz, noise) -> /base/imu (Isaac Sim moving-base topic)
-                   f'{imu_gz}@sensor_msgs/msg/Imu[gz.msgs.IMU'],
+                   f'{imu_gz}@sensor_msgs/msg/Imu[gz.msgs.IMU']
+                  + ([f'{GROUND_TRUTH_GZ}@nav_msgs/msg/Odometry[gz.msgs.Odometry'] if ground_truth else []),
         remappings=[('/model/wamv/odometry', '/sim/boat_odometry'), (imu_gz, '/base/imu')],
         parameters=[{'use_sim_time': True}])
     scene = Node(
@@ -159,6 +170,9 @@ def launch(context, *args, **kwargs):
     return nodes
 
 
+GROUND_TRUTH_GZ = '/sim/boat_ground_truth'     # gz topic = ROS topic (GroundTruthPublisher, ground_truth:=true)
+
+
 def generate_launch_description():
     default_xacro = os.path.join(
         get_package_share_directory('ocean_sim2sim_description'), 'urdf', 'wamv_with_arm.urdf.xacro')
@@ -176,7 +190,12 @@ def generate_launch_description():
         ('paused', 'False', 'True to start paused'),
         ('wave_gain', '', 'VRX wavefield gain (empty = world file value). docs/waves.md'),
         ('wave_period', '', 'VRX wavefield peak period [s] (empty = world file value)'),
-        ('drone_mode', 'px4', 'px4 = PX4 SITL flies the drone (venv + PX4-Autopilot needed); fixed = held on a world anchor'),
+        ('wave_direction', '', 'VRX wavefield mean direction [rad], 0 = waves travel to +x = towards the bow at start '
+                               '(empty = world file value, 0)'),
+        ('drone_mode', 'px4', 'px4 = PX4 SITL flies the drone (venv + PX4-Autopilot needed); fixed = held on a world '
+                              'anchor; none = no drone (boat motion recordings)'),
+        ('ground_truth', 'false', 'true = boat ground truth pose / body-frame velocity every physics step on '
+                                  '/sim/boat_ground_truth (nav_msgs/Odometry), docs/recording.md'),
         ('drone_motion', 'hover', 'px4: static, hover (sine around the hover point, Isaac Sim collection setting) or rc '
                                   '(real transmitter via the Pico serial device after the air start, docs/teleop.md)'),
         ('rc_port', '', 'drone_motion rc: serial device of the Pico (empty = config/rc_input.yaml port: auto = the MicroPython Pico '

@@ -4,7 +4,8 @@
   <name>ocean_sim2sim_gz_plugins</name>
   <version>0.1.0</version>
   <description>Gazebo systems for the ocean sim2sim scene: ContactMonitor (per-link contact forces of the robot arm,
-    input of the protective stop).</description>
+    input of the protective stop), GroundTruthPublisher (pose and body-frame velocity of one link every
+    physics step, boat motion recordings).</description>
   <maintainer email="taeung1203ai@gmail.com">taeung</maintainer>
   <license>Apache-2.0</license>
 
