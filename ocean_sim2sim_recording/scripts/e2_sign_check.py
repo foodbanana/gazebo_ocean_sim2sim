@@ -88,7 +88,7 @@ def main():
     p.add_argument('--out-dir', default='')
     a = p.parse_args()
     root = meta.repo_root()
-    out = a.out_dir or (os.path.join(root, 'recorded_data') if root else os.path.expanduser('~/recorded_data'))
+    out = a.out_dir or (os.path.join(root, 'movement_data_recording') if root else os.path.expanduser('~/movement_data_recording'))
     d = os.path.join(out, datetime.now().strftime('%Y%m%d_%H%M%S') + '_e2_sign_check')
     os.makedirs(d)
     if gazebo_servers() or sim_processes():

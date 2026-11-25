@@ -1,4 +1,4 @@
 __pycache__/
 *.pyc
 ocean_gazebo_bags/
-recorded_data/
+movement_data_recording/
